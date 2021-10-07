@@ -10,8 +10,8 @@ Group project with Jeff Krauss
 	File manager
 		sudo apt-get install -y libgtk-3-dev
 		gcc -o gtk_filechooser gtk_filechooser.c `pkg-config --libs --cflags gtk+-3.0`
-    
-  SSL
-    sudo apt-get install libssl-dev
-		
+	
+	SSL
+		sudo apt-get install libssl-dev
+
 ******************************************************************************/
