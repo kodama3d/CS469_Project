@@ -1,7 +1,7 @@
 /******************************************************************************
 
 PROGRAM:  cs469project.c
-AUTHOR:     Jeffrey Krauss
+AUTHOR:     Jeffrey Krauss, Dustin Segawa
 COURSE:     CS469 - Distributed Systems (Regis University)
 SYNOPSIS:  Description here.
 
@@ -12,18 +12,6 @@ SYNOPSIS:  Description here.
 // ./cs469projserver --> listening on 4433
 // ./cs469projclient --> asks for username and password
 // Client to server command: ./client 98.43.2.117:4433
-
-/**************************** Install Commands ********************************
-	
-	MP3 player
-		sudo apt-get install -y libsdl2-dev libsdl2-mixer-2.0-0 libsdl2-mixer-dev 
-		gcc -o playaudio playaudio.c -lSDL2_mixer -lSDL2
-	
-	File manager
-		sudo apt-get install -y libgtk-3-dev
-		gcc -o gtk_filechooser gtk_filechooser.c `pkg-config --libs --cflags gtk+-3.0`
-		
-******************************************************************************/
 
 #include <time.h>
 #include <netdb.h>
