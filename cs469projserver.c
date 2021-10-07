@@ -310,7 +310,6 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     int regCheck = 0;
     char username[BUFFER_SIZE];
     char password[BUFFER_SIZE];
-    char authorization[BUFFER_SIZE];
     
     // Open the file
     FILE* fp = fopen("/Users/jck/Desktop/cs469project/user_database.txt", "r");
@@ -358,7 +357,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
                 while (!feof(fp)) {
                     
                     // Scan the username, password, and authentication variables from each line
-                    fscanf(fp, "%[^;];%[^;];%[^;];\n", username, password, authorization);
+                    fscanf(fp, "%[^;];%[^;];\n", username, password);
                     
                     // The client's username matches a username in the database
                     if (strcmp(username, clientUserName) == 0) {
