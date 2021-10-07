@@ -1,9 +1,9 @@
 /******************************************************************************
 
-PROGRAM:  cs469project.c
+PROGRAM:    cs469project.c
 AUTHOR:     Jeffrey Krauss, Dustin Segawa
 COURSE:     CS469 - Distributed Systems (Regis University)
-SYNOPSIS:  Description here.
+SYNOPSIS:   Description here.
 
 ******************************************************************************/
 
@@ -46,7 +46,7 @@ SYNOPSIS:  Description here.
 #define PASSWORD_LENGTH     32
 #define HASH_LENGTH         264
 #define SEED_LENGTH         8
-#define DEBUG				true		// D: I use this while building code
+#define DEBUG               true		// D: I use this while building code
 
 // Method declarations
 void open_SSL();                                        // Initialize OpenSSL
