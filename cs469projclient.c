@@ -44,7 +44,7 @@ SYNOPSIS:   Description here.
 #define BUFFER_SIZE         256
 #define USERNAME_LENGTH     32
 #define PASSWORD_LENGTH     32
-#define HASH_LENGTH         264
+#define HASH_LENGTH         256         // J: hash length shouldn't be over 256
 #define SEED_LENGTH         8
 #define DEBUG               true		// D: I use this while building code
 
@@ -80,8 +80,6 @@ int main(int argc, char** argv) {
     char              remote_host[MAX_HOSTNAME_LENGTH];
     char              buffer[BUFFER_SIZE];
     char*             temp_ptr;
-    char              hash_buffer[USERNAME_LENGTH + HASH_LENGTH + 1];
-    char              user_hash[HASH_LENGTH];
     int               sockfd;
     int               writefd;
     int               rcount;
@@ -236,18 +234,16 @@ void login_message() {
 // Get the user's login information: username and password
 char* get_login_info() {
     
-    const char *const seedchars = "./0123456789" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "abcdefghijklmnopqrstuvwxyz";
-    unsigned long int seed[2];
-    char salt[] = "$5$........";
+    const char seedchars[64] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     static char hash[HASH_LENGTH];
+    char salt[] = "$1$........";  // $1$ == MD5
+   
+    // Assign a seed for random generation - should give the same salt each time
+    srand(2);
     
-    // Generate random seed
-    seed[0] = time(NULL);
-    seed[1] = getpid() ^ (seed[0] >> 14 & 0x30000);
-    
-    // Convert the salt into printable characters from the seedchars string
+    // Convert the remaining salt characters into pseudorandom numbers
     for (int i = 0; i < 8; i++) {
-        salt[3+i] = seedchars[(seed[i/5] >> (i%5)*6) & 0x3f];
+        salt[3+i] = seedchars[rand() % (sizeof(seedchars) - 1)];
     }
     
     // Enter the username that will be stored with the hash
@@ -263,8 +259,11 @@ char* get_login_info() {
     // algorithm using the generated salt string
     strncpy(hash, crypt(u_login.password, salt), HASH_LENGTH);
 	
-	if (DEBUG)	// D: I use these while building code
+    // Should generate the same salt each time
+    if (DEBUG) { // D: I use these while building code
+        printf("\nSalt is: %s\n", salt);
 		printf("Password with hash: %s\n", hash);
+    }
 
     // Let's just get rid of that password since we're done with it
     bzero(u_login.password, PASSWORD_LENGTH);
