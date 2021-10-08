@@ -17,11 +17,16 @@ SYNOPSIS:  Server program
 #include <sys/socket.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <dirent.h>
+#include <stdint.h>
 
 #define BUFFER_SIZE       256
 #define DEFAULT_PORT      4433
 #define CERTIFICATE_FILE  "cert.pem"
 #define KEY_FILE          "key.pem"
+#define MP3DIR			"/mp3"
+#define MP3FILE			"mp3_list.txt"
+#define DEBUG			true
 
 int validateUserLogin(SSL* ssl, char buffer[]);  // Read the user name from the client
 
@@ -180,6 +185,91 @@ void configure_context(SSL_CTX* ssl_ctx) {
 }
 
 /******************************************************************************
+	Scans mp3 directory for number of files and longest file name.
+
+******************************************************************************/
+int define_mp3_list(int * max_length) {
+	struct dirent* currentEntry;
+	char           dirname[BUFFER_SIZE];
+	DIR*           d;
+	int				file_count = 0;
+	
+	getcwd(dirname, BUFFER_SIZE);		// Get current directory
+	strcat(dirname, MP3DIR);			// Create mp3 directory name
+	
+	// Open the directory and check for error
+	if (DEBUG)
+		printf("Server: Opening MP3 directory: %s\n", dirname);
+	d = opendir(dirname);
+	if (d == NULL) {
+		fprintf(stderr, "Server: Could not open directory %s: %s\n", dirname, 
+				strerror(errno));
+		return 0;
+	}
+
+	currentEntry = readdir(d);			// Read mp3 directory
+
+	while(currentEntry != NULL) {		// loop through files in directory
+		if (currentEntry->d_type == DT_REG) {
+			file_count++;				// Count number of files
+			
+			// Store longest file name (Unable to set variable string length)
+			//if (* max_length < (int) strlen(currentEntry->d_name))
+			//	* max_length = (int) strlen(currentEntry->d_name);
+		}
+		currentEntry = readdir(d);    	// Get the next directory entry
+	}	// End of file list loop
+
+	closedir(d);
+	return file_count;
+}	// End of define_mp3_list
+
+/******************************************************************************
+	Builds the mp3 list
+
+******************************************************************************/
+void get_mp3_list(char mp3_list[][BUFFER_SIZE]) {
+	struct dirent* currentEntry;
+	struct stat    fileInfo;
+	char           olddir[BUFFER_SIZE];
+	char           dirname[BUFFER_SIZE];
+	DIR*           d;
+	int				file_count = 0;
+	
+	getcwd(olddir, BUFFER_SIZE);			// Save current working directory
+	getcwd(dirname, BUFFER_SIZE);
+	strcat(dirname, MP3DIR);			// Create mp3 directory name
+	
+	d = opendir(dirname);				// Directory already tested during scan
+	chdir(dirname);						// Move to mp3 directory
+	currentEntry = readdir(d);			// Read mp3 directory
+	while(currentEntry != NULL) {		// loop through files in directory
+		// Only print regular files
+		if (currentEntry->d_type == DT_REG) {
+			// Copy file name to mp3_list and increment counter
+			strcpy(mp3_list[file_count], currentEntry->d_name);	
+			file_count++;
+			
+			stat(currentEntry->d_name, &fileInfo);	// Read file stats
+			fprintf(stdout, "   Reading: %-30s\t%lu bytes\n", currentEntry->d_name, 
+				fileInfo.st_size);					// Display file name and size
+		}
+		
+		currentEntry = readdir(d);    	// Get the next directory entry
+	}	// End of file list loop
+	
+	chdir(olddir);						// Go back to previous directory
+	closedir(d);
+	
+	if (DEBUG)
+		for (int i = 0; i < file_count; i++)
+			printf("   List item #%i: '%s'\n", i, mp3_list[i]);
+
+}	// End of get_mp3_list
+
+
+
+/******************************************************************************
 
 The sequence of steps required to establish a secure SSL/TLS connection is:
 
@@ -204,6 +294,55 @@ int main(int argc, char **argv)
     unsigned int sockfd;
     unsigned int port;
     char         buffer[BUFFER_SIZE];
+
+//*****************************************************************************
+//	BUILDING: Running mp3 directory without client
+	
+	// mp3 variables
+	int mp3_count, max_length = 0;
+	
+	// Get file count and file name size
+	mp3_count = define_mp3_list(& max_length);
+	if (mp3_count <= 0)
+		exit(EXIT_FAILURE);
+	
+	// Initialize list
+	char mp3_list[mp3_count][BUFFER_SIZE];
+	memset(mp3_list, 0, mp3_count * BUFFER_SIZE * sizeof(char));	// Runs without it
+	
+	// Read directory into list
+	get_mp3_list(mp3_list);
+	if (DEBUG)
+		for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++)
+			printf("   Outer List item #%i: '%s'\n", i, mp3_list[i]);
+
+	// Write list to file
+	char	list_fn[strlen(MP3FILE)];
+	int		writefd;
+	
+	strcpy(list_fn, MP3FILE);
+	writefd = creat(list_fn, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);	// creates empty file for the copy
+	
+	for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++) {
+		strcpy(buffer, mp3_list[i]);
+		strcat(buffer, ";");
+		if (DEBUG)
+			printf("%s", buffer);
+		write(writefd, buffer, strlen(buffer));	// writes to copy, using the read buffer limit
+	}
+	
+	if (DEBUG)
+		printf("\n");
+
+	close(writefd);		// closes new file
+	
+//	END BUILDING: Running mp3 directory without client
+//*****************************************************************************
+
+
+
+
+
 
     // Initialize and create SSL data structures and algorithms
     init_openssl();
