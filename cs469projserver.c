@@ -24,9 +24,9 @@ SYNOPSIS:  Server program
 #define DEFAULT_PORT		4433
 #define CERTIFICATE_FILE	"cert.pem"
 #define KEY_FILE			"key.pem"
-#define ACCESS_FILE			"./user_database.txt"
+#define ACCOUNT_FILE		"./user_database.txt"
 #define MP3DIR				"/mp3"
-#define MP3FILE				"mp3_list.txt"
+#define MP3LISTFILE				"mp3_list.txt"
 #define ERRSTR_SIZE			4
 #define DEBUG				true
 
@@ -138,9 +138,9 @@ library, this provides the most functionality.
 
 ******************************************************************************/
 SSL_CTX* create_new_context() {
-  const SSL_METHOD* ssl_method; // This should be declared 'const' to avoid getting
-                                // a warning from the call to SSLv23_server_method()
-        SSL_CTX*    ssl_ctx;
+	const SSL_METHOD* 	ssl_method; // This should be declared 'const' to avoid getting
+									// a warning from the call to SSLv23_server_method()
+	SSL_CTX*    	ssl_ctx;
 
     // Use SSL/TLS method for server
     ssl_method = SSLv23_server_method();
@@ -292,11 +292,11 @@ void get_mp3_list(char mp3_list[][BUFFER_SIZE]) {
 
 ******************************************************************************/
 int write_mp3_file(char mp3_list[][BUFFER_SIZE], int list_len) {
-	char	list_fn[strlen(MP3FILE)];
+	char	list_fn[strlen(MP3LISTFILE)];
 	int		writefd;
 	char	buffer[BUFFER_SIZE];
 	
-	strcpy(list_fn, MP3FILE);
+	strcpy(list_fn, MP3LISTFILE);
 	
 	// creates empty file for the copy
 	writefd = creat(list_fn, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -350,99 +350,6 @@ int main(int argc, char **argv)
 	char			err_str[ERRSTR_SIZE];		// char for error number with terminator
 	int				err_num;
 
-//*****************************************************************************
-//	BUILDING: Running mp3 directory without client
-	
-	// Get file count and file name size
-	mp3_count = define_mp3_list(& max_length);
-	if (mp3_count <= 0)
-		exit(EXIT_FAILURE);
-	
-	// Initialize list
-	char mp3_list[mp3_count][BUFFER_SIZE];
-	memset(mp3_list, 0, mp3_count * BUFFER_SIZE * sizeof(char));	// Runs without it
-	
-	// Read directory into list
-	get_mp3_list(mp3_list);
-	if (DEBUG)
-		for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++)
-			printf("   String Array #%i: '%s'\n", i, mp3_list[i]);
-
-	// Write list to file
-	write_mp3_file(mp3_list, mp3_count);
-	
-	//*********************************************************************
-	// Send list file to client
-	
-	readfd = open(MP3FILE, O_RDONLY, 0);	// open input file stream
-	
-	//*********************************************************************
-	// read local file
-	if(readfd >= 0) {							// test input stream for file name
-		do {									// loop through until end of file
-			bzero(file_buffer, BUFFER_SIZE);					// clear buffer
-			rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
-			
-			if (rcount <= 0) {									// test for read error
-				sprintf(err_str, "%d", errno);					// stringify error number
-				//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
-				printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
-			}
-			else {
-				file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
-				
-				if (DEBUG)
-					printf("Server: Data read from file...: \"%s\"\n", file_buffer);
-
-				//* err_num = send_message(ssl, file_buffer, rcount);	// send data to client
-			}
-		} while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
-		
-		close(readfd);		// close input stream
-		
-		//*********************************************************************
-		// Reached end of file, notify client
-		if (DEBUG)
-			fprintf(stdout, "Server: Reached end of file...\n");
-		
-		// send EOF to client
-		sprintf(err_str, "%d", errno);						// stringify error number
-		//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
-		
-		//* if (err_num == 0)
-		//* 	fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
-		//* else
-		//* 	fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
-	
-	//*********************************************************************
-	// unable to read local file
-	} else {							// error opening file
-		// errno 2 - No such file or directory, or 13 - Permission denied
-		err_num = errno;				// copy number
-		fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
-		
-		// send error to client
-		sprintf(err_str, "%d", err_num);	// stringify error number
-		//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);
-		//* if (err_num != 0)
-		//* 	fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
-	}
-	
-	
-	
-//	END BUILDING: Running mp3 directory without client
-//*****************************************************************************
-
-
-//*****************************************************************************
-//	BUILDING: Client read file
-
-
-
-//	END BUILDING: Client read file
-//*****************************************************************************
-
-
     // Initialize and create SSL data structures and algorithms
     init_openssl();
     ssl_ctx = create_new_context();
@@ -450,15 +357,15 @@ int main(int argc, char **argv)
 
     // Port can be specified on the command line. If it's not, use the default port
     switch(argc) {
-        case 1:
-      port = DEFAULT_PORT;
-      break;
+		case 1:
+			port = DEFAULT_PORT;
+			break;
         case 2:
-        port = atoi(argv[1]);
-      break;
+			port = atoi(argv[1]);
+			break;
         default:
-      fprintf(stderr, "Usage: ssl-server <port> (optional)\n");
-      exit(EXIT_FAILURE);
+			fprintf(stderr, "Usage: ssl-server <port> (optional)\n");
+			exit(EXIT_FAILURE);
     }
 
     // This will create a network socket and return a socket descriptor, which is
@@ -478,6 +385,15 @@ int main(int argc, char **argv)
         unsigned int       len = sizeof(addr);
         char               client_addr[INET_ADDRSTRLEN];
         int                validLogin = 0;
+		
+		// Get mp3 file count and file name size on each connection
+		mp3_count = define_mp3_list(& max_length);
+		if (mp3_count <= 0)
+			exit(EXIT_FAILURE);
+					
+		// Initialize mp3 list
+		char mp3_list[mp3_count][BUFFER_SIZE];
+		memset(mp3_list, 0, mp3_count * BUFFER_SIZE * sizeof(char));	// Runs without it
     
         // Once an incoming connection arrives, accept it.  If this is successful, we
         // now have a connection between client and server and can communicate using
@@ -522,10 +438,91 @@ int main(int argc, char **argv)
         // No errors, validate the login information
         } else {
             validLogin = validateUserLogin(ssl, buffer);
-        }
+			
+			switch (validLogin) {
+				case 0:		// invalid login
+				
+					break;
+				case 1:		// wrong password
+				
+					break;
+				case 2:		// valid login
 
-        // File transfer complete
-        fprintf(stdout, "Placeholder message after client verification.\n");
+					// Read directory into list
+					get_mp3_list(mp3_list);
+					if (DEBUG)
+						for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++)
+							printf("   String Array #%i: '%s'\n", i, mp3_list[i]);
+
+					// Write list to file
+					write_mp3_file(mp3_list, mp3_count);
+					
+					//*********************************************************************
+					// Send list file to client
+					
+					readfd = open(MP3LISTFILE, O_RDONLY, 0);	// open input file stream
+					
+					//*********************************************************************
+					// read local file
+					if(readfd >= 0) {							// test input stream for file name
+						do {									// loop through until end of file
+							bzero(file_buffer, BUFFER_SIZE);					// clear buffer
+							rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
+							
+							if (rcount <= 0) {									// test for read error
+								sprintf(err_str, "%d", errno);					// stringify error number
+								err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
+								printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
+							}
+							else {
+								file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
+								
+								if (DEBUG)
+									printf("Server: Data read from file...: \"%s\"\n", file_buffer);
+
+								err_num = send_message(ssl, file_buffer, rcount);	// send data to client
+							}
+						} while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
+						
+						close(readfd);		// close input stream
+						
+						//*********************************************************************
+						// Reached end of file, notify client
+						if (DEBUG)
+							fprintf(stdout, "Server: Reached end of file...\n");
+						
+						// send EOF to client
+						sprintf(err_str, "%d", errno);						// stringify error number
+						err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+						
+						if (err_num == 0)
+						 	fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+						else
+						 	fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
+					
+					//*********************************************************************
+					// unable to read local file
+					} else {							// error opening file
+						// errno 2 - No such file or directory, or 13 - Permission denied
+						err_num = errno;				// copy number
+						fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
+						
+						// send error to client
+						sprintf(err_str, "%d", err_num);	// stringify error number
+						err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+						if (err_num != 0)
+							fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
+					}
+					
+					// File transfer complete
+					fprintf(stdout, "Placeholder message after client verification.\n");
+
+					break;
+				default:	// error
+					fprintf(stderr, "Server: Error authenticating client\n");
+					exit(EXIT_FAILURE);
+			}
+        }
         
         // Terminate the SSL session, close the TCP connection, and clean up
         fprintf(stdout, "Server: Terminating SSL session and TCP connection with client (%s)\n", client_addr);
@@ -550,9 +547,9 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     char password[BUFFER_SIZE];
 	
     // Open the file
-	FILE* fp = fopen(ACCESS_FILE, "r");
+	FILE* fp = fopen(ACCOUNT_FILE, "r");
 	if (fp <= 0) {
-		fprintf(stderr, "Server: Error opening password file: %s\n", ACCESS_FILE);
+		fprintf(stderr, "Server: Error opening password file: %s\n", ACCOUNT_FILE);
 		exit(EXIT_FAILURE);
 	}
 	
@@ -585,7 +582,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
         regCheck = regexec(&regex, buffer, (size_t) 0, NULL, 0);
         
 		if (DEBUG)
-			printf("Server Received: '%s'\n", buffer);
+			printf("\nServer received login: '%s'\nServer reading account file:\n", buffer);
 		
         // The client sent a matching pattern
         if (regCheck == 0) {
@@ -596,28 +593,36 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
 	         
             // Use sscanf to assign the username and password
             if (sscanf(buffer, "validate login(%[^,], %[^)];", clientUserName, clientPassword) == 2) {
-            
+				
                 // Continue until end of the file
                 while (!feof(fp)) {
                     // Scan the username, password, and authentication variables from each line
                     fscanf(fp, "%[^;];%[^;];\n", username, password);
 					
 					if (DEBUG)
-						printf("FILE Username: %s, Password: %s\n", username, password);
+						printf("     Username: %s, Password: %s\n", username, password);
                     
                     // The client's username matches a username in the database
                     if (strcmp(username, clientUserName) == 0) {
-                        printf("%s found\n", clientUserName);
-                        
-                        // TODO: this is only output for testing
-                        printf("Password: %s\n", password);
-                        printf("Client password: %s\n", clientPassword);
-                        
+                        //*** The file password may have the \n still attached to the end of the string
+						if (strlen(password) == (strlen(clientPassword) + 2))
+							password[strlen(password)-2] = '\0';
+													
+						if (DEBUG) {
+							printf("Server:   username: %s found\n", clientUserName);
+							printf("   File password  : '%s'\n", password);
+							printf("   Client password: '%s'\n", clientPassword);
+							printf("   Password length: %li:%li\n", strlen(password), strlen(clientPassword));
+						}
+
                         // The client's password matches the password in the database
                         if(strcmp(password, clientPassword) == 0) {
-                            printf("%s found\n", clientPassword);
+                            printf("%s@Client authenticated!\n\n", username);
+							// TODO: send message to client
                             return 2;  // Username and password match
                         }
+						printf("%s@Client entered the wrong password!\n\n", username);
+						// TODO: send message to client
                         return 1;  // Username only, error with hash
                     }
                 }
@@ -625,7 +630,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
         }
     }
     fclose(fp);
-    
-    // No username match found
-    return 0;
+	printf("Server: Invalid authentication!\n\n");
+	// TODO: send message to client
+    return 0;	// No username match found
 }
