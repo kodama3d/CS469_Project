@@ -20,14 +20,15 @@ SYNOPSIS:  Server program
 #include <dirent.h>
 #include <stdint.h>
 
-#define BUFFER_SIZE       256
-#define DEFAULT_PORT      4433
-#define CERTIFICATE_FILE  "cert.pem"
-#define KEY_FILE          "key.pem"
-#define MP3DIR			"/mp3"
-#define MP3FILE			"mp3_list.txt"
-#define ERRSTR_SIZE		4
-#define DEBUG			true
+#define BUFFER_SIZE			256
+#define DEFAULT_PORT		4433
+#define CERTIFICATE_FILE	"cert.pem"
+#define KEY_FILE			"key.pem"
+#define ACCESS_FILE			"./user_database.txt"
+#define MP3DIR				"/mp3"
+#define MP3FILE				"mp3_list.txt"
+#define ERRSTR_SIZE			4
+#define DEBUG				true
 
 int validateUserLogin(SSL* ssl, char buffer[]);  // Read the user name from the client
 
@@ -184,6 +185,29 @@ void configure_context(SSL_CTX* ssl_ctx) {
         exit(EXIT_FAILURE);
     }
 }
+
+/******************************************************************************
+This function is repeated throughout the program, so it takes in parameters necessary
+to perform SSL message transfer functions, and takes care of error handling.
+ssl: required for sending SSL message
+msg: data content in char string format
+char_cnt: bytes sent in message, necessary for client to determine error messages
+******************************************************************************/
+int send_message(SSL* ssl, char* msg, int char_cnt) {
+	int		nbytes_written;
+  	
+	nbytes_written = SSL_write(ssl, msg, char_cnt);		// transmit message to client
+	
+	if (nbytes_written <= 0) {							// test for written byte count
+		fprintf(stderr, "Server: Could not write message to client: %s\n", strerror(errno));
+		exit(EXIT_FAILURE);
+	} else
+		if (DEBUG)										// show result message
+			printf("Server: Message transmitted to client: \"%s\"\n", msg);
+
+	return errno;
+}
+
 
 /******************************************************************************
 	Scans mp3 directory for number of files and longest file name.
@@ -410,8 +434,13 @@ int main(int argc, char **argv)
 //*****************************************************************************
 
 
+//*****************************************************************************
+//	BUILDING: Client read file
 
 
+
+//	END BUILDING: Client read file
+//*****************************************************************************
 
 
     // Initialize and create SSL data structures and algorithms
@@ -519,20 +548,24 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     int regCheck = 0;
     char username[BUFFER_SIZE];
     char password[BUFFER_SIZE];
-    
+	
     // Open the file
-    FILE* fp = fopen("/Users/jck/Desktop/cs469project/user_database.txt", "r");
-    
-    // Regex variable
+	FILE* fp = fopen(ACCESS_FILE, "r");
+	if (fp <= 0) {
+		fprintf(stderr, "Server: Error opening password file: %s\n", ACCESS_FILE);
+		exit(EXIT_FAILURE);
+	}
+	
+	// Regex variable
     regex_t regex;
-    
+	
     // Regex pattern for: validate login(username, password);
     char *regexPattern = "^validate login[[:punct:]].*, .*[[:punct:]];$";
     
-    // Validate regex compiling
+	// Validate regex compiling
     if (regcomp(&regex, regexPattern, REG_EXTENDED) != 0) {
         
-        // Output the error message
+	    // Output the error message
         fprintf(stderr, "Error compiling regex using pattern: %s", regexPattern);
         
         // Erase the buffer
@@ -548,25 +581,29 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     
     // Regex compiling was successful
     } else {
-        
         // Examine the string for a pattern match
         regCheck = regexec(&regex, buffer, (size_t) 0, NULL, 0);
         
+		if (DEBUG)
+			printf("Server Received: '%s'\n", buffer);
+		
         // The client sent a matching pattern
         if (regCheck == 0) {
-            
+			
             // Assign the entire operation to a string
             char clientUserName[BUFFER_SIZE];
             char clientPassword[BUFFER_SIZE];
-            
+	         
             // Use sscanf to assign the username and password
             if (sscanf(buffer, "validate login(%[^,], %[^)];", clientUserName, clientPassword) == 2) {
             
                 // Continue until end of the file
                 while (!feof(fp)) {
-                    
                     // Scan the username, password, and authentication variables from each line
                     fscanf(fp, "%[^;];%[^;];\n", username, password);
+					
+					if (DEBUG)
+						printf("FILE Username: %s, Password: %s\n", username, password);
                     
                     // The client's username matches a username in the database
                     if (strcmp(username, clientUserName) == 0) {

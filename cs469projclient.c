@@ -316,10 +316,13 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     
     // Concatenate the string with the operation
     snprintf(clientLoginInfo, BUFFER_SIZE, "validate login(%s, %s);", u_login.username, u_login.password);
-    
+	
     // Copy the operation to the buffer
     strcpy(buffer, clientLoginInfo);
     
+	if (DEBUG)
+		printf("Client: Info sent to server: %s\n", buffer);
+	
     // Send the operation to the server
     int clientLoginMsg = SSL_write(ssl, buffer, BUFFER_SIZE);
     
