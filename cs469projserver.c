@@ -26,6 +26,7 @@ SYNOPSIS:  Server program
 #define KEY_FILE          "key.pem"
 #define MP3DIR			"/mp3"
 #define MP3FILE			"mp3_list.txt"
+#define ERRSTR_SIZE		4
 #define DEBUG			true
 
 int validateUserLogin(SSL* ssl, char buffer[]);  // Read the user name from the client
@@ -189,9 +190,9 @@ void configure_context(SSL_CTX* ssl_ctx) {
 
 ******************************************************************************/
 int define_mp3_list(int * max_length) {
-	struct dirent* currentEntry;
-	char           dirname[BUFFER_SIZE];
-	DIR*           d;
+	struct dirent*	currentEntry;
+	char			dirname[BUFFER_SIZE];
+	DIR*			d;
 	int				file_count = 0;
 	
 	getcwd(dirname, BUFFER_SIZE);		// Get current directory
@@ -236,7 +237,7 @@ void get_mp3_list(char mp3_list[][BUFFER_SIZE]) {
 	DIR*           d;
 	int				file_count = 0;
 	
-	getcwd(olddir, BUFFER_SIZE);			// Save current working directory
+	getcwd(olddir, BUFFER_SIZE);		// Save current working directory
 	getcwd(dirname, BUFFER_SIZE);
 	strcat(dirname, MP3DIR);			// Create mp3 directory name
 	
@@ -260,14 +261,39 @@ void get_mp3_list(char mp3_list[][BUFFER_SIZE]) {
 	
 	chdir(olddir);						// Go back to previous directory
 	closedir(d);
-	
-	if (DEBUG)
-		for (int i = 0; i < file_count; i++)
-			printf("   List item #%i: '%s'\n", i, mp3_list[i]);
-
 }	// End of get_mp3_list
 
+/******************************************************************************
+	Writes the mp3 list file
 
+******************************************************************************/
+int write_mp3_file(char mp3_list[][BUFFER_SIZE], int list_len) {
+	char	list_fn[strlen(MP3FILE)];
+	int		writefd;
+	char	buffer[BUFFER_SIZE];
+	
+	strcpy(list_fn, MP3FILE);
+	
+	// creates empty file for the copy
+	writefd = creat(list_fn, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	
+	if (DEBUG)
+		printf("\nWriting to file: '");
+	
+	for (int i = 0; i < list_len; i++) {
+		strcpy(buffer, mp3_list[i]);
+		strcat(buffer, ";");
+		if (DEBUG)
+			printf("%s", buffer);
+			
+		write(writefd, buffer, strlen(buffer));	// writes to copy, using the read buffer limit
+	}
+	
+	if (DEBUG)
+		printf("'\n\n");
+
+	close(writefd);		// closes new file
+}
 
 /******************************************************************************
 
@@ -290,16 +316,18 @@ allocated to the SSL object and close the socket descriptor.
 
 int main(int argc, char **argv)
 {
-    SSL_CTX*     ssl_ctx;
-    unsigned int sockfd;
-    unsigned int port;
-    char         buffer[BUFFER_SIZE];
+    SSL_CTX*		ssl_ctx;
+    unsigned int 	sockfd;
+    unsigned int 	port;
+    char			buffer[BUFFER_SIZE];
+	char			file_buffer[BUFFER_SIZE];
+	int				mp3_count, max_length = 0;
+	int				readfd, rcount;
+	char			err_str[ERRSTR_SIZE];		// char for error number with terminator
+	int				err_num;
 
 //*****************************************************************************
 //	BUILDING: Running mp3 directory without client
-	
-	// mp3 variables
-	int mp3_count, max_length = 0;
 	
 	// Get file count and file name size
 	mp3_count = define_mp3_list(& max_length);
@@ -314,27 +342,69 @@ int main(int argc, char **argv)
 	get_mp3_list(mp3_list);
 	if (DEBUG)
 		for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++)
-			printf("   Outer List item #%i: '%s'\n", i, mp3_list[i]);
+			printf("   String Array #%i: '%s'\n", i, mp3_list[i]);
 
 	// Write list to file
-	char	list_fn[strlen(MP3FILE)];
-	int		writefd;
+	write_mp3_file(mp3_list, mp3_count);
 	
-	strcpy(list_fn, MP3FILE);
-	writefd = creat(list_fn, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);	// creates empty file for the copy
+	//*********************************************************************
+	// Send list file to client
 	
-	for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++) {
-		strcpy(buffer, mp3_list[i]);
-		strcat(buffer, ";");
+	readfd = open(MP3FILE, O_RDONLY, 0);	// open input file stream
+	
+	//*********************************************************************
+	// read local file
+	if(readfd >= 0) {							// test input stream for file name
+		do {									// loop through until end of file
+			bzero(file_buffer, BUFFER_SIZE);					// clear buffer
+			rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
+			
+			if (rcount <= 0) {									// test for read error
+				sprintf(err_str, "%d", errno);					// stringify error number
+				//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
+				printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
+			}
+			else {
+				file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
+				
+				if (DEBUG)
+					printf("Server: Data read from file...: \"%s\"\n", file_buffer);
+
+				//* err_num = send_message(ssl, file_buffer, rcount);	// send data to client
+			}
+		} while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
+		
+		close(readfd);		// close input stream
+		
+		//*********************************************************************
+		// Reached end of file, notify client
 		if (DEBUG)
-			printf("%s", buffer);
-		write(writefd, buffer, strlen(buffer));	// writes to copy, using the read buffer limit
+			fprintf(stdout, "Server: Reached end of file...\n");
+		
+		// send EOF to client
+		sprintf(err_str, "%d", errno);						// stringify error number
+		//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+		
+		//* if (err_num == 0)
+		//* 	fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+		//* else
+		//* 	fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
+	
+	//*********************************************************************
+	// unable to read local file
+	} else {							// error opening file
+		// errno 2 - No such file or directory, or 13 - Permission denied
+		err_num = errno;				// copy number
+		fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
+		
+		// send error to client
+		sprintf(err_str, "%d", err_num);	// stringify error number
+		//* err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+		//* if (err_num != 0)
+		//* 	fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
 	}
 	
-	if (DEBUG)
-		printf("\n");
-
-	close(writefd);		// closes new file
+	
 	
 //	END BUILDING: Running mp3 directory without client
 //*****************************************************************************
