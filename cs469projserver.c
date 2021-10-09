@@ -187,7 +187,7 @@ void configure_context(SSL_CTX* ssl_ctx) {
 }
 
 /******************************************************************************
-This function is repeated throughout the program, so it takes in parameters necessary
+This function is repeated throughout the program, so it takes in parameters 
 to perform SSL message transfer functions, and takes care of error handling.
 ssl: required for sending SSL message
 msg: data content in char string format
@@ -195,8 +195,12 @@ char_cnt: bytes sent in message, necessary for client to determine error message
 ******************************************************************************/
 int send_message(SSL* ssl, char* msg, int char_cnt) {
 	int		nbytes_written;
+	char	buffer[BUFFER_SIZE];
+	
+	bzero(buffer, BUFFER_SIZE);	// zero out buffer
+	strcpy(buffer, msg);		// Copy the message to the buffer
   	
-	nbytes_written = SSL_write(ssl, msg, char_cnt);		// transmit message to client
+	nbytes_written = SSL_write(ssl, buffer, char_cnt);		// transmit message to client
 	
 	if (nbytes_written <= 0) {							// test for written byte count
 		fprintf(stderr, "Server: Could not write message to client: %s\n", strerror(errno));
@@ -545,6 +549,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     int regCheck = 0;
     char username[BUFFER_SIZE];
     char password[BUFFER_SIZE];
+	int serverLoginMsg = 0;
 	
     // Open the file
 	FILE* fp = fopen(ACCOUNT_FILE, "r");
@@ -552,7 +557,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
 		fprintf(stderr, "Server: Error opening password file: %s\n", ACCOUNT_FILE);
 		exit(EXIT_FAILURE);
 	}
-	
+
 	// Regex variable
     regex_t regex;
 	
@@ -572,7 +577,7 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
         sprintf(buffer, "Error on server side compiling the pattern recognizer, please contact the helpdesk.");
         
         // Write it to the SSL socket descriptor
-        int fileNameError = SSL_write(ssl, buffer, BUFFER_SIZE);
+        send_message(ssl, buffer, BUFFER_SIZE);
         
         return 0;
     
@@ -617,20 +622,25 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
 
                         // The client's password matches the password in the database
                         if(strcmp(password, clientPassword) == 0) {
-                            printf("%s@Client authenticated!\n\n", username);
-							// TODO: send message to client
+                            printf("Server: %s@Client authenticated!\n\n", username);
+							send_message(ssl, "2", BUFFER_SIZE);
                             return 2;  // Username and password match
-                        }
-						printf("%s@Client entered the wrong password!\n\n", username);
-						// TODO: send message to client
-                        return 1;  // Username only, error with hash
+                        } else {
+							
+							// The client's password does not match
+							printf("Server: %s@Client entered the wrong password!\n\n", username);
+							send_message(ssl, "1", BUFFER_SIZE);
+							return 1;  // Username only, error with hash
+						}
                     }
                 }
             }
         }
     }
     fclose(fp);
+	
+	// The clients username and password do not match
 	printf("Server: Invalid authentication!\n\n");
-	// TODO: send message to client
+	send_message(ssl, "0", BUFFER_SIZE);
     return 0;	// No username match found
 }

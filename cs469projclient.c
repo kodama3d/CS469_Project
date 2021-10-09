@@ -54,6 +54,7 @@ int create_socket(char* hostname, unsigned int port);   // Secure TCP connection
 void login_message();                                   // Login screen message
 char* get_login_info();                                 // Get the client's username and hash
 void getPassword(char* password);                       // Get the client's password
+int send_message(SSL* ssl, char* msg, int char_cnt);	// Sends SSL message and handles errors
 int validateUserLogin(SSL* ssl, char buffer[]);         // Authenticate the username/hash with server
 
 // Struct representing username and password
@@ -259,11 +260,8 @@ char* get_login_info() {
     // algorithm using the generated salt string
     strncpy(hash, crypt(u_login.password, salt), HASH_LENGTH);
 	
-    // Should generate the same salt each time
-    if (DEBUG) { // D: I use these while building code
-        printf("\nSalt is: %s\n", salt);
-		printf("Password with hash: %s\n", hash);
-    }
+    if (DEBUG)   // D: I use these while building code
+        printf("Client: Salt is: %s, Password with hash: %s\n", salt, hash);
 
     // Let's just get rid of that password since we're done with it
     bzero(u_login.password, PASSWORD_LENGTH);
@@ -300,10 +298,34 @@ void getPassword(char* password) {
     // Restore the old (saved) terminal settings
     tcsetattr(STDIN_FILENO, TCSANOW, &oldsettings);
 	
+	printf("\n");		// new line after hiding password
+	
 	if (DEBUG)	// D: I use these while building code
-		printf("\nPassword Entered: '%s'\n", password);
+		printf("Client: Password Entered: '%s'\n", password);
     
 } // End of getPassword
+
+/******************************************************************************
+This function is repeated throughout the program, so it takes in parameters necessary
+to perform SSL message transfer functions, and takes care of error handling.
+ssl: required for sending SSL message
+msg: data content in char string format
+char_cnt: bytes sent in message, necessary for client to determine error messages
+******************************************************************************/
+int send_message(SSL* ssl, char* msg, int char_cnt) {
+	int		nbytes_written;
+  	
+	nbytes_written = SSL_write(ssl, msg, char_cnt);		// transmit message to client
+	
+	if (nbytes_written <= 0) {							// test for written byte count
+		fprintf(stderr, "Server: Could not write message to client: %s\n", strerror(errno));
+		exit(EXIT_FAILURE);
+	} else
+		if (DEBUG)										// show result message
+			printf("Server: Message transmitted to client: \"%s\"\n", msg);
+
+	return errno;
+}	// End of send_message
 
 // Validates the username and password (hash) with the server
 int validateUserLogin(SSL* ssl, char buffer[]) {
@@ -333,14 +355,18 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
         exit(EXIT_FAILURE);
     }
     
-    // TODO: Need to integrate this with server
-    clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
+    // Receive confirmation message from server
+	clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
     
     if (strcmp(buffer, "0") == 0) {
-        printf("Username does not exist, please enter a valid user name.\n");
+        printf("Client: Username does not exist on server, please enter a valid user name.\n");
         return 0;
-    } else {
+    } else if (strcmp(buffer, "1") == 0) {
+		printf("Client: Server password does not match.\n");
         return 1;
-    }
+    } else if (strcmp(buffer, "2") == 0) {
+		printf("Client: Server Login Successful!\n");
+		return 2;
+	}
     
 } // End of validateUserLogin
