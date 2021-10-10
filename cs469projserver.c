@@ -520,6 +520,9 @@ int main(int argc, char **argv)
 						
 						// TODO: if send file
 							// TODO: send file
+                            // This link illustrates using the sendfile() method to send an entire file
+                            // over a socket
+                            // https://stackoverflow.com/questions/30582473/send-mp3-file-over-socket-in-c
 							
 						// TODO: else
 							// terminate
