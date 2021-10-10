@@ -388,15 +388,19 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
 void displayMenu(SSL* ssl, char buffer[]) {
     
     int     userInput = 0;          // User input select to exit or view the a song menu
+    int     exitFlag = 0;           // Exit while loops without return per Regis standards
+    char    selectAgain;            // Char variable to select another song or not
     char    songMenu[BUFFER_SIZE];  // Song menu for the client to view
     
+    // Get the mp3 file message from the buffer
     int mp3FileMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
 
     strcpy(songMenu, buffer);  // Copy the buffer into a song menu to free up the buffer
     
     printf("\n");  // New line to clean up the output
     
-    while(1) {
+    while(exitFlag != 1) {
+        // First ask the user if they want to see the song menu or exit
         printf("1: View the song menu.\n");
         printf("2: Exit the program.\n");
         printf("Please enter your input:\n");
@@ -419,27 +423,69 @@ void displayMenu(SSL* ssl, char buffer[]) {
                         i++;
                     }
                 }
-                printf("\n");
+                printf("\n");  // Clean up the output
                 
-                // TODO: select song menu and send back to server
+                // Select a song and send it to the server
                 selectSong(ssl, buffer, songMenu);
                 
-                
+                // Loop to allow the client to select another song or exit
+                while(exitFlag != 1) {
+                    
+                    // Ask the client to select another song or not
+                    printf("\nEnter Y to select another song or N to exit the program:\n");
+                    scanf(" %c", &selectAgain);
+                    fflush(stdin);
+                    
+                    size_t j = 0;  // Iteration variable
+                    
+                    printf("\n");  // Clean up the output
+                    
+                    switch(selectAgain) {
+                        // Yes, show the menu and allow another selection
+                        case 'Y':
+                            printf("Song Menu:\n");
+                            while (songMenu[j] != '\0') {
+                                if (songMenu[j] == ';') {
+                                    printf("\n");
+                                    j++;
+                                }
+                                if (songMenu[j] != '\0') {
+                                    printf("%c", songMenu[j]);
+                                    j++;
+                                }
+                            }
+                            printf("\n");
+                            selectSong(ssl, buffer, songMenu);
+                            break;
+                        
+                        // They don't want to select another song, exit program
+                        case 'N':
+                            printf("Exiting program.\n");
+                            printf("Thank you for using Song Slinger!.\n");
+                            exitFlag = 1;
+                            break;
+                        
+                        // They have to type Y or N to continue
+                        default:
+                            printf("Please type either Y or N\n");
+                            break;
+                    } // End of inner switch statement
+                } // End of inner while loop
                 break;
             
             // Exit the entire method
             case 2:
                 printf("Thank you for using Song Slinger!\n\n");
-                return;
+                exitFlag = 1;
+                break;
 
             // Remind the client to select either 1 or 2
             default:
-                printf("Please select either 1 to exit or 2 to view the song menu.\n\n");
+                printf("Please type either 1 or 2\n\n");
                 break;
                 
-        } // End of switch statement
-    }
-    
+        } // End of outer switch statement
+    } // End of outer while loop
 } // End of displayMenu method
 
 // Select a song from the song menu
@@ -448,29 +494,29 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     char song[BUFFER_SIZE];  // The song selection that the user types
     
     // Ask the user for a song selection
-    printf("Please type the song you want to play:\n");
+    printf("Please type the song you want to play\n");
     scanf(" %[^\n]", song);
     fflush(stdin);
-    
+        
     if (DEBUG)
-        printf("Song selection: %s\n", song);
+        printf("Song selected by user is: %s\n", song);
     
+    // TODO: finds any substring so make sure it's an exact match
     char *foundSong = strstr(songMenu, song);  // Look for song as substring of songMenu
-    
+        
     if (foundSong) {
         if (DEBUG)
             printf("Song found in song menu.\n");
-        
+            
         bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
         strcpy(buffer, song);                       // Copy the song name to the buffer
         send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
         
-        // TODO: receive the song from the buffer
         
-    } else {
-        printf("Song does not exist. Please check your spelling.\n");
-    }
-    
-    printf("\n");
+        // TODO: receive the song from the buffer, play it, return to previous method
+            
+        } else {
+            printf("Song does not exist. Please check your spelling.\n");
+        }
     
 } // End of selectSong
