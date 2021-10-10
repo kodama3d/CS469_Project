@@ -37,8 +37,10 @@ SYNOPSIS:   Description here.
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 
-#define DEFAULT_PORT        4433
-#define DEFAULT_HOST        "localhost"
+#define DEFAULT_PORT        4433        // Primary port
+#define BACKUP_PORT         4435        // Backup port for fault tolerance
+#define D_HOST              98.43.2.117 // This host for production
+#define DEFAULT_HOST        "localhost" // This host for testing
 #define JEFF_HOSTNAME       "Jeffreys-MacBook-Pro.local"
 #define MAX_HOSTNAME_LENGTH 256
 #define BUFFER_SIZE         256
@@ -109,13 +111,6 @@ int main(int argc, char** argv) {
     
     // Create the underlying TCP socket connection to the remote host
     sockfd = create_socket(remote_host, port);
-    
-    if(sockfd != 0) {}
-        // TCP established, do nothing to allow for transparency
-    else {
-        fprintf(stderr, "Error, could not establish TCP connection, please contact the help desk for assistance.\n");
-        exit(EXIT_FAILURE);
-    }
 
     // Bind the SSL object to the network socket descriptor
     SSL_set_fd(ssl, sockfd);
@@ -221,23 +216,22 @@ int create_socket(char* hostname, unsigned int port) {
         exit(EXIT_FAILURE);
     }
   
-    // First we set up a network socket. An IP socket address is a combination
-    // of an IP interface address plus a 16-bit port number. The struct field
-    // sin_family is *always* set to AF_INET. Anything else returns an error.
-    // The TCP port is stored in sin_port, but needs to be converted to the
-    // format on the host machine to network byte order, which is why htons()
-    // is called. The s_addr field is the network address of the remote host
-    // specified on the command line. The earlier call to gethostbyname()
-    // retrieves the IP address for the given hostname.
-    dest_addr.sin_family=AF_INET;
-    dest_addr.sin_port=htons(port);
-    dest_addr.sin_addr.s_addr = *(long*)(host->h_addr);
+    dest_addr.sin_family=AF_INET;       // Setup a network socket
+    dest_addr.sin_port=htons(port);     // Convert TCP port to network byte order using htons()
+    dest_addr.sin_addr.s_addr = *(long*)(host->h_addr);  // Netork address of remote host
   
     // Connect to the remote host
-    if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) <0) {
-        fprintf(stderr, "Client: Cannot connect to host %s [%s] on port %d: %s\n",
-            hostname, inet_ntoa(dest_addr.sin_addr), port, strerror(errno));
-        exit(EXIT_FAILURE);
+    if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) < 0) {
+        
+        // Can't connect to remote host, try backup port
+        dest_addr.sin_port=htons(BACKUP_PORT);
+        
+        // It doesn't work with the backup, exit
+        if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) < 0) {
+            fprintf(stderr, "Client: Cannot connect to host %s [%s] on port %d: %s\n",
+                hostname, inet_ntoa(dest_addr.sin_addr), port, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
     }
     
     return sockfd;
