@@ -56,6 +56,8 @@ char* get_login_info();                                 // Get the client's user
 void getPassword(char* password);                       // Get the client's password
 int send_message(SSL* ssl, char* msg, int char_cnt);	// Sends SSL message and handles errors
 int validateUserLogin(SSL* ssl, char buffer[]);         // Authenticate the username/hash with server
+void displayMenu(SSL* ssl, char buffer[]);                  // Display the MP3 file menu
+void selectSong(SSL* ssl, char buffer[], char songMenu[]);  // Select a song from the MP3 file menu
 
 // Struct representing username and password
 struct user_login {
@@ -134,6 +136,11 @@ int main(int argc, char** argv) {
     
     // Send the client's login info to the server for validation
     validLogin = validateUserLogin(ssl, buffer);
+    
+    // Username and password match, receive file list
+    if (validLogin == 2) {
+        displayMenu(ssl, buffer);
+    }
     
 	// REQ: LOOP Client will receive request for termination or list files 
 
@@ -281,10 +288,6 @@ char* get_login_info() {
 
 // This function reads in a character string that represents a password,
 // but does so while not echoing the characters typed to the console.
-// Doing that requires first saving the terminal settings, changing the
-// echo flag to off, then setting the flags.  Turning the echo back on
-// just reverses the steps using the saved terminal settings.
-
 void getPassword(char* password) {
     static struct termios oldsettings, newsettings;
     int c, i = 0;
@@ -380,3 +383,94 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
 	}
     
 } // End of validateUserLogin
+
+// Loop that asks the client to see the song menu or exit the program
+void displayMenu(SSL* ssl, char buffer[]) {
+    
+    int     userInput = 0;          // User input select to exit or view the a song menu
+    char    songMenu[BUFFER_SIZE];  // Song menu for the client to view
+    
+    int mp3FileMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
+
+    strcpy(songMenu, buffer);  // Copy the buffer into a song menu to free up the buffer
+    
+    printf("\n");  // New line to clean up the output
+    
+    while(1) {
+        printf("1: View the song menu.\n");
+        printf("2: Exit the program.\n");
+        printf("Please enter your input:\n");
+        scanf("%d", &userInput);
+        printf("\n");
+        
+        size_t i = 0;  // Iteration variable
+        
+        switch(userInput) {
+            // Loop through the song menu and display the string names
+            case 1:
+                printf("Song Menu:\n");
+                while (songMenu[i] != '\0') {
+                    if (songMenu[i] == ';') {
+                        printf("\n");
+                        i++;
+                    }
+                    if (songMenu[i] != '\0') {
+                        printf("%c", songMenu[i]);
+                        i++;
+                    }
+                }
+                printf("\n");
+                
+                // TODO: select song menu and send back to server
+                selectSong(ssl, buffer, songMenu);
+                
+                
+                break;
+            
+            // Exit the entire method
+            case 2:
+                printf("Thank you for using Song Slinger!\n\n");
+                return;
+
+            // Remind the client to select either 1 or 2
+            default:
+                printf("Please select either 1 to exit or 2 to view the song menu.\n\n");
+                break;
+                
+        } // End of switch statement
+    }
+    
+} // End of displayMenu method
+
+// Select a song from the song menu
+void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
+    
+    char song[BUFFER_SIZE];  // The song selection that the user types
+    
+    // Ask the user for a song selection
+    printf("Please type the song you want to play:\n");
+    scanf(" %[^\n]", song);
+    fflush(stdin);
+    
+    if (DEBUG)
+        printf("Song selection: %s\n", song);
+    
+    char *foundSong = strstr(songMenu, song);  // Look for song as substring of songMenu
+    
+    if (foundSong) {
+        if (DEBUG)
+            printf("Song found in song menu.\n");
+        
+        bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
+        strcpy(buffer, song);                       // Copy the song name to the buffer
+        send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
+        
+        // TODO: receive the song from the buffer
+        
+    } else {
+        printf("Song does not exist. Please check your spelling.\n");
+    }
+    
+    printf("\n");
+    
+} // End of selectSong
