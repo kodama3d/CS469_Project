@@ -45,11 +45,11 @@ SYNOPSIS:   Description here.
 #define USERNAME_LENGTH     32
 #define PASSWORD_LENGTH     32
 #define HASH_LENGTH         256         // J: hash length shouldn't be over 256
-#define SEED_LENGTH         8
 #define DEBUG               true		// D: I use this while building code
 
 // Method declarations
 void open_SSL();                                        // Initialize OpenSSL
+SSL_CTX* initSSL(void);                                 // Create an SSL client method
 int create_socket(char* hostname, unsigned int port);   // Secure TCP connection to server
 void login_message();                                   // Login screen message
 char* get_login_info();                                 // Get the client's username and hash
@@ -76,7 +76,7 @@ struct user_login {
   10. Close the sockets
  */
 int main(int argc, char** argv) {
-    const SSL_METHOD* method;
+
     unsigned int      port = DEFAULT_PORT;
     char              remote_host[MAX_HOSTNAME_LENGTH];
     char              buffer[BUFFER_SIZE];
@@ -99,23 +99,12 @@ int main(int argc, char** argv) {
     // Initialize Open_SSL
     open_SSL();
     
-    // Use the SSL/TLS method for clients
-    method = SSLv23_client_method();
-
-    // Create new context instance
-    ssl_ctx = SSL_CTX_new(method);
-    if (ssl_ctx == NULL) {
-        fprintf(stderr, "Unable to create a new SSL context structure.\n");
-        exit(EXIT_FAILURE);
-    }
+    // Create the SSL client method
+    ssl_ctx = initSSL();
     
-    // This disables SSLv2, which means only SSLv3 and TLSv1 are available
-    // to be negotiated between client and server
-    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2);
-
     // Create a new SSL connection state object
     ssl = SSL_new(ssl_ctx);
-
+    
     // Create the underlying TCP socket connection to the remote host
     sockfd = create_socket(remote_host, port);
     
@@ -126,13 +115,10 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    // Bind the SSL object to the network socket descriptor.  The socket descriptor
-    // will be used by OpenSSL to communicate with a server. This function should only
-    // be called once the TCP connection is established, i.e., after create_socket()
+    // Bind the SSL object to the network socket descriptor
     SSL_set_fd(ssl, sockfd);
 
-    // Initiates an SSL session over the existing socket connection.  SSL_connect()
-    // will return 1 if successful.
+    // Initiates an SSL session over the existing socket connection, returns 1 if successful
     if (SSL_connect(ssl) == 1) {}
         // SSL/TLS established, do nothing to allow for transparency
     else {
@@ -182,6 +168,30 @@ void open_SSL() {
     }
 } // End of open_SSL method
 
+// Create the SSL client method
+SSL_CTX* initSSL(void) {
+    
+    const SSL_METHOD*     method;
+    SSL_CTX*              ssl_ctx;
+    
+    // Use the SSL/TLS method for clients
+    method = SSLv23_client_method();
+
+    // Create new context instance
+    ssl_ctx = SSL_CTX_new(method);
+    
+    if (ssl_ctx == NULL) {
+        fprintf(stderr, "Unable to create a new SSL context structure.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    // This disables SSLv2, which means only SSLv3 and TLSv1 are available
+    // to be negotiated between client and server
+    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2);
+    
+    return ssl_ctx;
+
+}
 
 // Establish a secure TCP connection to the server specified by 'hostname'
 int create_socket(char* hostname, unsigned int port) {
