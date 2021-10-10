@@ -296,7 +296,8 @@ void get_mp3_list(char mp3_list[][BUFFER_SIZE]) {
 
 ******************************************************************************/
 int write_mp3_file(char mp3_list[][BUFFER_SIZE], int list_len) {
-	char	list_fn[strlen(MP3LISTFILE)];
+	// char list_fn[13]; // JK: I get an error using the assignment below "Illegal Expression: 4"
+    char	list_fn[strlen(MP3LISTFILE)];
 	int		writefd;
 	char	buffer[BUFFER_SIZE];
 	
