@@ -495,7 +495,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     if (DEBUG)
         printf("Song selected by user is: %s\n", song);
     
-    // TODO: finds any substring so make sure it's an exact match
+    // TODO: finds any substring so make sure it's an exact match, right now it's a basic solution
     char *foundSong = strstr(songMenu, song);  // Look for song as substring of songMenu
         
     if (foundSong) {
@@ -506,8 +506,8 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         strcpy(buffer, song);                       // Copy the song name to the buffer
         send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
         
-        
         // TODO: receive the song from the buffer, play it, return to previous method
+        // TODO: this only works once right now because the server side needs to handle it
             
         } else {
             printf("Song does not exist. Please check your spelling.\n");
