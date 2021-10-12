@@ -26,7 +26,7 @@ SYNOPSIS:  Server program
 #define KEY_FILE			"key.pem"
 #define ACCOUNT_FILE		"./user_database.txt"
 #define MP3DIR				"/mp3"
-#define MP3LISTFILE				"mp3_list.txt"
+#define MP3LISTFILE		    "mp3_list.txt"
 #define ERRSTR_SIZE			4
 #define DEBUG				true
 
@@ -406,11 +406,11 @@ int main(int argc, char **argv)
         int                client;
         int                readfd;
         int                rcount;
+        int                validLogin 0;
         struct             sockaddr_in addr;
         unsigned int       len = sizeof(addr);
         char               client_addr[INET_ADDRSTRLEN];
-        int                validLogin;
-		
+        
         // Once an incoming connection arrives, accept it.  If this is successful, we
         // now have a connection between client and server and can communicate using
         // the socket descriptor
@@ -444,83 +444,87 @@ int main(int argc, char **argv)
             fprintf(stdout, "Server: Established SSL/TLS connection with client (%s)\n", client_addr);
 			// Don't transmit to client for transparency
         
-        // SSL_read call
-        int clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
-              
-        //*** Enter client access
-        if (clientLoginMsg < 0) {	// Check the call for errors
-            int sslReadError = SSL_get_error(ssl, clientLoginMsg);
-            fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
-        
-        // No errors, validate the login information
-        } else {
+        // Process username and login while the client username/password combo is incorrect
+        while (validLogin != 2) {
+                
+            // SSL_read call
+            int clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
+                      
+            //*** Enter client access
+            if (clientLoginMsg < 0) {    // Check the call for errors
+                int sslReadError = SSL_get_error(ssl, clientLoginMsg);
+                fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
+            }
+                
             validLogin = validateUserLogin(ssl, buffer, client_addr);
+        }
 			
-			// ************************************************************************
-			// Client Logged In Block
-			if (validLogin == 2) {
-				// TODO: wait for message to send list or terminate
-				
-				// TODO: if send list
-					// Send mp3 list file to client
-					readfd = open(MP3LISTFILE, O_RDONLY, 0);	// open input file stream
+        // ************************************************************************
+        // Client Logged In Block
+        if (validLogin == 2) {
+            // TODO: wait for message to send list or terminate
+            
+            // TODO: if send list
+            // Send mp3 list file to client
+            readfd = open(MP3LISTFILE, O_RDONLY, 0);	// open input file stream
 					
-					if(readfd >= 0) {							// test input stream for file name
-						do {									// loop through until end of file
-							bzero(file_buffer, BUFFER_SIZE);					// clear buffer
-							rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
+            if(readfd >= 0) {							// test input stream for file name
+                
+                do {									// loop through until end of file
+                    bzero(file_buffer, BUFFER_SIZE);					// clear buffer
+                    rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
 							
-							if (rcount <= 0) {									// test for read error
-								sprintf(err_str, "%d", errno);					// stringify error number
-								err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
-								printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
-							}
-							else {
-								file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
+                    if (rcount <= 0) {									// test for read error
+                        sprintf(err_str, "%d", errno);					// stringify error number
+                        err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
+                        printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
+                        }
+                    else {
+                        file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
 								
-								if (DEBUG)
-									printf("Server: Data read from file...: \"%s\"\n", file_buffer);
+                        if (DEBUG)
+                            printf("Server: Data read from file...: \"%s\"\n", file_buffer);
 
-								err_num = send_message(ssl, file_buffer, rcount);	// send data to client
-							}
-						} while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
+                        err_num = send_message(ssl, file_buffer, rcount);	// send data to client
+                        }
+                } while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
 						
-						close(readfd);		// close input stream
+                close(readfd);		// close input stream
 						
-						// Reached end of file, notify client
-						if (DEBUG)
-							fprintf(stdout, "Server: Reached end of file...\n");
+                // Reached end of file, notify client
+                if (DEBUG)
+                    fprintf(stdout, "Server: Reached end of file...\n");
 						
-                        // Commented out, error on Jeff's machine due to 4 extra bytes in the buffer
-						// send EOF to client
-						//sprintf(err_str, "%d", errno);						// stringify error number
-						//err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+                // Commented out, error on Jeff's machine due to 4 extra bytes in the buffer
+                // send EOF to client
+                //sprintf(err_str, "%d", errno);						// stringify error number
+                //err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
 						
-						if (err_num == 0)
-							fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
-						else
-							fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
+                if (err_num == 0)
+                    fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+                else
+                    fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
 					
-					// unable to read local file
-					} else {							// error opening file
-						// errno 2 - No such file or directory, or 13 - Permission denied
-						err_num = errno;				// copy number
-						fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
+                // unable to read local file
+                } else {							// error opening file
+                    // errno 2 - No such file or directory, or 13 - Permission denied
+                    err_num = errno;				// copy number
+                    fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
 						
-						// send error to client
-						sprintf(err_str, "%d", err_num);	// stringify error number
-						err_num = send_message(ssl, err_str, ERRSTR_SIZE);
-						if (err_num != 0)
-							fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
-					}
+                    // send error to client
+                    sprintf(err_str, "%d", err_num);	// stringify error number
+                    err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+                    if (err_num != 0)
+                        fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
+                }
 					
-					// ************************************************************************
-					// Client Playing mp3 Block
-					// TODO: LOOP
-						// TODO: wait for file number message or terminate
-						
-						// TODO: if send file
-							// TODO: send file
+                // ************************************************************************
+                // Client Playing mp3 Block
+                // TODO: LOOP
+                    // TODO: wait for file number message or terminate
+                    
+                    // TODO: if send file
+                        // TODO: send file
                 
                 // This will return a song number i.e. 1, 2, 10, etc.
                 // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
@@ -594,8 +598,7 @@ int main(int argc, char **argv)
 				// TODO: else
 					// terminate
 				
-			}
-        }
+			} 
         
         // Terminate the SSL session, close the TCP connection, and clean up
         fprintf(stdout, "Server: Terminating SSL session and TCP connection with client (%s)\n", client_addr);
