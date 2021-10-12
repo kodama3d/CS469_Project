@@ -491,9 +491,10 @@ int main(int argc, char **argv)
 						if (DEBUG)
 							fprintf(stdout, "Server: Reached end of file...\n");
 						
+                        // Commented out, error on Jeff's machine due to 4 extra bytes in the buffer
 						// send EOF to client
-						sprintf(err_str, "%d", errno);						// stringify error number
-						err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+						//sprintf(err_str, "%d", errno);						// stringify error number
+						//err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
 						
 						if (err_num == 0)
 							fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
@@ -521,43 +522,71 @@ int main(int argc, char **argv)
 						// TODO: if send file
 							// TODO: send file
                 
-                // ********** This code block (basically yours from above) always sends the exact file size!
-                /*
-                        // Some logic to receive a song and find the song in the directory
-                        // int songSelection = SSL_read(ssl, buffer, BUFFER_SIZE);
+                // This will return a song number i.e. 1, 2, 10, etc.
+                // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
+                int songSelection = SSL_read(ssl, buffer, BUFFER_SIZE);
                 
-                        int sendMP3Data = 0;
-                        char mp3Buffer[BUFFER_SIZE];
-                        int count = 0;
+                int count = 0;                  // For debugging
+                int wcount = 0;                 // Amount written by SSL_write
+                int fileSize = 0;               // Used with stat to get file size
+                char mp3Buffer[BUFFER_SIZE];    // Buffer to send mp3 file bytes
+                struct stat st;                 // Used to get file size
                 
-                        rcount = 0;
+                rcount = 0;                     // Erase previous rcount assignment
                 
-                        int mp3_fd = open("<file location here>", O_RDONLY, 0);
+                // Use the song sent by the buffer to locate the song and open the file
+                // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
+                int mp3_fd = open("/Users/jck/Desktop/cs469project/mp3/04 Koj nyob qhov twg.mp3", O_RDONLY, 0);
                 
-                        if (mp3_fd >= 0) {
-                        printf("MP3 file opened and fd created.\n");
+                // File descriptor created successfully
+                if (mp3_fd >= 0) {
                     
-                        do {
-                            bzero(mp3Buffer, BUFFER_SIZE);
-                            rcount = read(mp3_fd, mp3Buffer, BUFFER_SIZE);
+                    // Get the file size and send it to the client
+                    fstat(mp3_fd, &st);
+                    fileSize = st.st_size;
+                    
+                    if (DEBUG)
+                        printf("MP3 file opened and fd created.\n");
+                        printf("MP3 file size is: %d.\n", fileSize);
+                    
+                    // Send the size of the file to the client
+                    bzero(buffer, BUFFER_SIZE);
+                    sprintf(buffer, "%d", fileSize);
+                    send_message(ssl, buffer, BUFFER_SIZE);
+                    
+                    // Read bytes from the file and send them to client using SSL_write()
+                    do {
+                        bzero(mp3Buffer, BUFFER_SIZE);
+                        rcount = read(mp3_fd, mp3Buffer, BUFFER_SIZE);
                         
-                            if (rcount <= 0) {
-                                // Need errno here
-                                printf("Error reading data.\n");
-                            } else {
-                                mp3Buffer[rcount] = '\0';
-                                sendMP3Data = SSL_write(ssl, mp3Buffer, rcount);
-                                count += rcount;
-                            }
-                        } while(rcount != 0 && rcount == BUFFER_SIZE);
+                        // Identify errors with read syscall
+                        if (rcount <= 0) {
+                            sprintf(err_str, "%d", errno);                    // stringify error number
+                            err_num = send_message(ssl, err_str, ERRSTR_SIZE);    // send read error
+                            printf("Server: Unable to read %d: %s\n", mp3_fd, strerror(errno));
+                        
+                        // Read syscall successfull
+                        } else {
+                            mp3Buffer[rcount] = '\0';                   // Null terminate
+                            wcount = SSL_write(ssl, mp3Buffer, rcount); // Send mp3 bytes to client
+                            count += rcount;                            // Sum the bytes written
+                        }
+                    } while(rcount != 0 && rcount == BUFFER_SIZE);
                 
-                    printf("Total size of data writtent to buffer was: %d\n", count);
+                    if (DEBUG)
+                        printf("Total bytes written to buffer was: %d\n", count);
                     
                 } else {
-                    // Need errno here
-                    printf("Error opening MP3 file.\n");
+                    err_num = errno;
+                    fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
+                    
+                    // send error to client
+                    sprintf(err_str, "%d", err_num);    // stringify error number
+                    err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+                    if (err_num != 0)
+                        fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
                 }
-                */
+                close(mp3_fd);
                 
 						// TODO: else
 							// terminate
