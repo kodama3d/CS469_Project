@@ -507,29 +507,57 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
         
         
-        // Create the file for read and write access - set to a local directory
+        int mp3_fd = 0;                 // MP3 file descriptor
+        int mp3_read = 0;
+        int rcount = 0;
+        int wcount = 0;
+        int count = 0;
+        
+        // Create the file for read and write access
         mp3_fd = open("/Users/jck/Desktop/cs469project/mp3/a.mp3", O_RDWR | O_CREAT, 0);
         
-        // Make sure the file was created
         if (mp3_fd >= 0) {
-            
-            if (DEBUG)
-                printf("MP3 file created on client.\n");
-            
+            printf("MP3 file created on client.\n");
+        
             do {
                 rcount = SSL_read(ssl, buffer, BUFFER_SIZE);
-                wcount = write(mp3_fd, buffer, rcount);
-                count += wcount;
-            } while (rcount != 0);
+                
+                if (rcount <= 0) {
+                    printf("Error reading data.\n");
+                    int sslReadError = SSL_get_error(ssl, rcount);
+                    fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
+                    if (sslReadError == SSL_ERROR_ZERO_RETURN)
+                        printf("Zero return.\n");
+                    if (sslReadError == SSL_ERROR_WANT_READ)
+                        printf("Want read.\n");
+                    if (sslReadError == SSL_ERROR_WANT_WRITE)
+                        printf("Want write.\n");
+                    if (sslReadError == SSL_ERROR_WANT_CONNECT)
+                        printf("Want connect.\n");
+                    if (sslReadError == SSL_ERROR_WANT_ACCEPT)
+                        printf("Want accept.\n");
+                    if (sslReadError == SSL_ERROR_WANT_X509_LOOKUP)
+                        printf("X509.\n");
+                    if (sslReadError == SSL_ERROR_SYSCALL) {
+                        printf("Error syscall.\n");
+                        fprintf(stderr, "Error: %s\n", strerror(errno));
+                    }
+                    if (sslReadError == SSL_ERROR_SSL)
+                        printf("Error_ssl.\n");
+                    
+                    
+                } else {
+                    buffer[rcount] = '\0';
+                    wcount = write(mp3_fd, buffer, rcount);
+                    printf("wcount is: %d\n", wcount);
+                    count += wcount;
+                    bzero(buffer, BUFFER_SIZE);
+                }
+            } while (rcount > 0);
             
-            // TODO: data received is always less than the amount sent by server
-            // TODO: server so far always sends the correct amount of data
             printf("Total amount written to MP3 file is: %d\n", count);
-            
-        } else {
-            // TODO: errno
-            printf("File not created.\n")
-        }
+    
+        } // End of if statement
         
         close(mp3_fd);
 
