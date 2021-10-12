@@ -495,7 +495,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     if (DEBUG)
         printf("Song selected by user is: %s\n", song);
     
-    // TODO: finds any substring so make sure it's an exact match, right now it's a basic solution
+    // TODO: send only the file number
     char *foundSong = strstr(songMenu, song);  // Look for song as substring of songMenu
         
     if (foundSong) {
@@ -506,9 +506,33 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         strcpy(buffer, song);                       // Copy the song name to the buffer
         send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
         
-        // TODO: receive the song from the buffer, play it, return to previous method
-        // TODO: this only works once right now because the server side needs to handle it
+        
+        // Create the file for read and write access - set to a local directory
+        mp3_fd = open("/Users/jck/Desktop/cs469project/mp3/a.mp3", O_RDWR | O_CREAT, 0);
+        
+        // Make sure the file was created
+        if (mp3_fd >= 0) {
             
+            if (DEBUG)
+                printf("MP3 file created on client.\n");
+            
+            do {
+                rcount = SSL_read(ssl, buffer, BUFFER_SIZE);
+                wcount = write(mp3_fd, buffer, rcount);
+                count += wcount;
+            } while (rcount != 0);
+            
+            // TODO: data received is always less than the amount sent by server
+            // TODO: server so far always sends the correct amount of data
+            printf("Total amount written to MP3 file is: %d\n", count);
+            
+        } else {
+            // TODO: errno
+            printf("File not created.\n")
+        }
+        
+        close(mp3_fd);
+
         } else {
             printf("Song does not exist. Please check your spelling.\n");
         }
