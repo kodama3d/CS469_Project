@@ -520,30 +520,44 @@ int main(int argc, char **argv)
 						
 						// TODO: if send file
 							// TODO: send file
-                            // This link illustrates using the sendfile() method to send an entire file
-                            // over a socket, but I couldn't get it to work
-                            // https://stackoverflow.com/questions/30582473/send-mp3-file-over-socket-in-c
-							
-                            // I also tried this and other methods but it stops in the 500-600K byte range and won't send anymore
-                            
-                            // char mp3Buffer[50000];
-                            //FILE *mp3_file = fopen("/Users/jck/Desktop/cs469project/mp3/02 Lad Huang.mp3", "r");
-                            //
-                            //if (mp3_file == NULL) {
-                            //    printf("File open failed.\n");
-                            //}
-                            //
-                            //ssize_t bytes_read = 0;
-                            //ssize_t bytes_written = 0;
-                            //ssize_t total_bytes = 0;
-                            //
-                            //do {
-                            //    bytes_read = fread(mp3Buffer, 1, 50000, mp3_file);
-                            //    bytes_written = SSL_write(ssl, mp3Buffer, bytes_read);
-                            //    printf("Write operation status: %s; bytes sent: %zd\n", strerror(errno), bytes_written);
-                            //   total_bytes += bytes_written;
-                            //    printf("Total bytes written: %zd", total_bytes);
-                            //} while (!feof(mp3_file) && bytes_written != -1);
+                
+                // ********** This code block (basically yours from above) always sends the exact file size!
+                /*
+                        // Some logic to receive a song and find the song in the directory
+                        // int songSelection = SSL_read(ssl, buffer, BUFFER_SIZE);
+                
+                        int sendMP3Data = 0;
+                        char mp3Buffer[BUFFER_SIZE];
+                        int count = 0;
+                
+                        rcount = 0;
+                
+                        int mp3_fd = open("<file location here>", O_RDONLY, 0);
+                
+                        if (mp3_fd >= 0) {
+                        printf("MP3 file opened and fd created.\n");
+                    
+                        do {
+                            bzero(mp3Buffer, BUFFER_SIZE);
+                            rcount = read(mp3_fd, mp3Buffer, BUFFER_SIZE);
+                        
+                            if (rcount <= 0) {
+                                // Need errno here
+                                printf("Error reading data.\n");
+                            } else {
+                                mp3Buffer[rcount] = '\0';
+                                sendMP3Data = SSL_write(ssl, mp3Buffer, rcount);
+                                count += rcount;
+                            }
+                        } while(rcount != 0 && rcount == BUFFER_SIZE);
+                
+                    printf("Total size of data writtent to buffer was: %d\n", count);
+                    
+                } else {
+                    // Need errno here
+                    printf("Error opening MP3 file.\n");
+                }
+                */
                 
 						// TODO: else
 							// terminate
