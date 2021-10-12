@@ -42,6 +42,7 @@ SYNOPSIS:   Description here.
 #define D_HOST              98.43.2.117 // This host for production
 #define DEFAULT_HOST        "localhost" // This host for testing
 #define JEFF_HOSTNAME       "Jeffreys-MacBook-Pro.local"
+#define SONG_FILE_LOC       "/Users/jck/Desktop/cs469project/mp3/a.mp3"
 #define MAX_HOSTNAME_LENGTH 256
 #define BUFFER_SIZE         256
 #define USERNAME_LENGTH     32
@@ -50,16 +51,18 @@ SYNOPSIS:   Description here.
 #define DEBUG               true		// D: I use this while building code
 
 // Method declarations
-void open_SSL();                                        // Initialize OpenSSL
-SSL_CTX* initSSL(void);                                 // Create an SSL client method
-int create_socket(char* hostname, unsigned int port);   // Secure TCP connection to server
-void login_message();                                   // Login screen message
-char* get_login_info();                                 // Get the client's username and hash
-void getPassword(char* password);                       // Get the client's password
-int send_message(SSL* ssl, char* msg, int char_cnt);	// Sends SSL message and handles errors
-int validateUserLogin(SSL* ssl, char buffer[]);         // Authenticate the username/hash with server
+void open_SSL();                                            // Initialize OpenSSL
+SSL_CTX* initSSL(void);                                     // Create an SSL client method
+int create_socket(char* hostname, unsigned int port);       // Secure TCP connection to server
+void login_message();                                       // Login screen message
+char* get_login_info();                                     // Get the client's username and hash
+void getPassword(char* password);                           // Get the client's password
+int send_message(SSL* ssl, char* msg, int char_cnt);	    // Sends SSL message and handles errors
+int validateUserLogin(SSL* ssl, char buffer[]);             // Authenticate the username/hash with server
 void displayMenu(SSL* ssl, char buffer[]);                  // Display the MP3 file menu
 void selectSong(SSL* ssl, char buffer[], char songMenu[]);  // Select a song from the MP3 file menu
+void idSSLReadError(int sslReadError);                      // Error identification for SSL_read() call
+void errorCreatingFD(int fd);                               // Error handling for creating file descriptor
 
 // Struct representing username and password
 struct user_login {
@@ -485,7 +488,14 @@ void displayMenu(SSL* ssl, char buffer[]) {
 // Select a song from the song menu
 void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     
-    char song[BUFFER_SIZE];  // The song selection that the user types
+    int mp3_fd = 0;         // MP3 file descriptor
+    int rcount = 0;         // Number of bytes read from SSL_read()
+    int wcount = 0;         // Number of bytes written to mp3 file
+    int count = 0;          // Used with debugging to confirm file size
+    int getFileSize = 0;    // SSL_read() to get a file size from server
+    long fileSize = 0;      // File size after conversion from str to long int
+    char *endptr;           // Pointer for string to long int conversion
+    char song[BUFFER_SIZE]; // The song selection that the user types
     
     // Ask the user for a song selection
     printf("Please type the song you want to play\n");
@@ -493,76 +503,133 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     fflush(stdin);
         
     if (DEBUG)
-        printf("Song selected by user is: %s\n", song);
+        printf("\nSong selected by user is: %s.\n", song);
     
-    // TODO: send only the file number
+    // TODO: finds any substring so make sure it's an exact match
     char *foundSong = strstr(songMenu, song);  // Look for song as substring of songMenu
         
     if (foundSong) {
         if (DEBUG)
-            printf("Song found in song menu.\n");
-            
+            printf("Song exists in song menu.\n");
+        
         bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
         strcpy(buffer, song);                       // Copy the song name to the buffer
         send_message(ssl, buffer, BUFFER_SIZE);     // Send the song selection back to the buffer
         
+        // Get the file size from the server
+        getFileSize = SSL_read(ssl, buffer, BUFFER_SIZE);
         
-        int mp3_fd = 0;                 // MP3 file descriptor
-        int mp3_read = 0;
-        int rcount = 0;
-        int wcount = 0;
-        int count = 0;
+        if (DEBUG)
+            printf("File size is: %s\n", buffer);
+        
+        errno = 0;                              // Don't want to use a previous errno value
+        fileSize = strtol(buffer, &endptr, 0);  // Convert the file size string to a long int
+        
+        // Check for errors
+        if (errno != 0) {
+            fprintf(stderr, "Error reading the file size: %s.\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        // No digits found in the buffer string
+        if (endptr == buffer) {
+            fprintf(stderr, "Error reading the file size: %s.\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        
+        if (DEBUG)
+            printf("File size after long int conversion is: %ld.\n", fileSize);
         
         // Create the file for read and write access
-        mp3_fd = open("/Users/jck/Desktop/cs469project/mp3/a.mp3", O_RDWR | O_CREAT, 0);
+        mp3_fd = open(SONG_FILE_LOC, O_RDWR | O_CREAT, 0);
         
+        // File descriptor created successfully
         if (mp3_fd >= 0) {
-            printf("MP3 file created on client.\n");
-        
+            
+            if (DEBUG)
+                printf("MP3 file created on client.\n");
+    
+            // SSL_read and write to the mp3 file while bytes remain
             do {
+                
+                // SSL_read call
                 rcount = SSL_read(ssl, buffer, BUFFER_SIZE);
                 
+                // Identify any errors with SSL_read()
                 if (rcount <= 0) {
-                    printf("Error reading data.\n");
-                    int sslReadError = SSL_get_error(ssl, rcount);
-                    fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
-                    if (sslReadError == SSL_ERROR_ZERO_RETURN)
-                        printf("Zero return.\n");
-                    if (sslReadError == SSL_ERROR_WANT_READ)
-                        printf("Want read.\n");
-                    if (sslReadError == SSL_ERROR_WANT_WRITE)
-                        printf("Want write.\n");
-                    if (sslReadError == SSL_ERROR_WANT_CONNECT)
-                        printf("Want connect.\n");
-                    if (sslReadError == SSL_ERROR_WANT_ACCEPT)
-                        printf("Want accept.\n");
-                    if (sslReadError == SSL_ERROR_WANT_X509_LOOKUP)
-                        printf("X509.\n");
-                    if (sslReadError == SSL_ERROR_SYSCALL) {
-                        printf("Error syscall.\n");
-                        fprintf(stderr, "Error: %s\n", strerror(errno));
+                    if (DEBUG) {
+                        int sslReadError = SSL_get_error(ssl, rcount);
+                        idSSLReadError(sslReadError);
                     }
-                    if (sslReadError == SSL_ERROR_SSL)
-                        printf("Error_ssl.\n");
                     
-                    
+                // SSL_read() is successful
                 } else {
-                    buffer[rcount] = '\0';
-                    wcount = write(mp3_fd, buffer, rcount);
-                    printf("wcount is: %d\n", wcount);
-                    count += wcount;
-                    bzero(buffer, BUFFER_SIZE);
+                    buffer[rcount] = '\0';                      // Null terminate
+                    wcount = write(mp3_fd, buffer, rcount);     // Write the bytes to the MP3 fd
+                    count += wcount;                            // Sum the bytes written
+                    bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
                 }
+                
+            // Continue while data is being sent by the server
             } while (rcount > 0);
             
-            printf("Total amount written to MP3 file is: %d\n", count);
-    
-        } // End of if statement
+            if (DEBUG)
+                printf("\nTotal amount written to MP3 file is: %d\n", count);
+            
+        // Error creating the file descriptor
+        } else {
+            errorCreatingFD(mp3_fd);
+        }
+        
+        // Check that the bytes written local file match the file size read by the server
+        if (count != fileSize) {
+            printf("File size does not match the file sent by Song Slinger, exiting program.\n");
+            exit(EXIT_FAILURE);
+        }
         
         close(mp3_fd);
-
+            
         } else {
-            printf("Song does not exist. Please check your spelling.\n");
+            printf("Song not found on the song menu. Please check your spelling.\n");
         }
+
     
 } // End of selectSong
+
+// Play the MP3 file
+void playMP3File(SSL* ssl, char buffer[]) {
+    
+}
+
+// Handle errors when creating a file descriptor
+void errorCreatingFD(int fd) {
+    fprintf(stderr, "Error creating %d: %s.\n", fd, strerror(errno));
+    fprintf(stdout, "Exiting program.\n");
+    exit(EXIT_FAILURE);
+}
+
+// Passes an error from SSL_get_error and outputs the error message
+void idSSLReadError(int sslReadError) {
+    
+    fprintf(stdout, "Error with SSL_read() call, id returned: %d.\n", sslReadError);
+    
+    if (sslReadError == SSL_ERROR_ZERO_RETURN)
+        fprintf(stderr, "SSL_ERROR_ZERO_RETURN: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_WANT_READ)
+        fprintf(stderr, "SSL_ERROR_WANT_READ: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_WANT_WRITE)
+        fprintf(stderr, "SSL_ERROR_WANT_WRITE: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_WANT_CONNECT)
+        fprintf(stderr, "SSL_ERROR_WANT_CONNECT: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_WANT_ACCEPT)
+        fprintf(stderr, "SSL_ERROR_WANT_ACCEPT: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_WANT_X509_LOOKUP)
+        fprintf(stderr, "SSL_ERROR_WANT_X509_LOOKUP: %s\n", strerror(errno));
+    if (sslReadError == SSL_ERROR_SYSCALL)
+        fprintf(stderr, "SSL_ERROR_SYSCALL: %s\n", strerror(errno));
+        
+    // Once bytes are 0, it may produce this error message, in that case ignore it
+    if (sslReadError == SSL_ERROR_SSL)
+        fprintf(stderr, "SSL_ERROR_SSL: %s\n", strerror(errno));
+        
+} // End of idSSLReadError
