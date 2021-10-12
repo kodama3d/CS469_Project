@@ -6,15 +6,11 @@ COURSE:     CS469 - Distributed Systems (Regis University)
 SYNOPSIS:   Description here.
 
 ******************************************************************************/
-
-// cd desktop/cs469project
-// gcc -o proj cs469project.c
-// ./cs469projserver --> listening on 4433
-// ./cs469projclient --> asks for username and password
 // Client to server command: ./client 98.43.2.117:4433
 
 #include <time.h>
 #include <netdb.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <resolv.h>
@@ -28,6 +24,8 @@ SYNOPSIS:   Description here.
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_mixer.h>
 
 // SSL header files
 #include <openssl/bio.h>
@@ -41,7 +39,6 @@ SYNOPSIS:   Description here.
 #define BACKUP_PORT         4435        // Backup port for fault tolerance
 #define D_HOST              98.43.2.117 // This host for production
 #define DEFAULT_HOST        "localhost" // This host for testing
-#define JEFF_HOSTNAME       "Jeffreys-MacBook-Pro.local"
 #define SONG_FILE_LOC       "/Users/jck/Desktop/cs469project/mp3/a.mp3"
 #define MAX_HOSTNAME_LENGTH 256
 #define BUFFER_SIZE         256
@@ -57,12 +54,14 @@ int create_socket(char* hostname, unsigned int port);       // Secure TCP connec
 void login_message();                                       // Login screen message
 char* get_login_info();                                     // Get the client's username and hash
 void getPassword(char* password);                           // Get the client's password
-int send_message(SSL* ssl, char* msg, int char_cnt);	    // Sends SSL message and handles errors
+int send_message(SSL* ssl, char* msg, int char_cnt);        // Sends SSL message and handles errors
 int validateUserLogin(SSL* ssl, char buffer[]);             // Authenticate the username/hash with server
 void displayMenu(SSL* ssl, char buffer[]);                  // Display the MP3 file menu
 void selectSong(SSL* ssl, char buffer[], char songMenu[]);  // Select a song from the MP3 file menu
 void idSSLReadError(int sslReadError);                      // Error identification for SSL_read() call
-void errorCreatingFD(int fd);                               // Error handling for creating file descriptor
+void errorCreatingFD(int fd);                               // Error handling for creating file descriptors
+void playMP3File(int mp3_fd);                               // Plays an MP3 file
+void deleteMP3File();                                       // Deletes an MP3 file
 
 // Struct representing username and password
 struct user_login {
@@ -98,8 +97,7 @@ int main(int argc, char** argv) {
     SSL*              ssl;
     
     // Set the hostname name so the client doesn't have to
-    // TODO: change to JEFF_HOSTNAME when testing on Jeff's machiine
-    strncpy(remote_host, DEFAULT_HOST, MAX_HOSTNAME_LENGTH);
+    strncpy(remote_host, D_HOST, MAX_HOSTNAME_LENGTH);
     
 	// REQ: Client should automatically acquire backup servers when primary servers not available
 	
@@ -129,27 +127,20 @@ int main(int argc, char** argv) {
     // Display the login message to the client
     login_message();
     
-    // Produce a hash using the user's password + salt
-    strcpy(u_login.password, get_login_info());
+    // TODO: loop that allows the user to exit or continue trying to log in
+    do {
+        // Produce a hash using the user's password + salt
+        strcpy(u_login.password, get_login_info());
     
-    // Send the client's login info to the server for validation
-    validLogin = validateUserLogin(ssl, buffer);
+        // Send the client's login info to the server for validation
+        validLogin = validateUserLogin(ssl, buffer);
+        
+    } while (validLogin != 2);
     
     // Username and password match, receive file list
     if (validLogin == 2) {
         displayMenu(ssl, buffer);
     }
-    
-	// REQ: LOOP Client will receive request for termination or list files 
-
-		// REQ: Client will request list of files 
-			  // Client will receive list of files 
-			  // Client will display list of files to user 
-
-		// REQ: Client will request to play a file 
-			  // Client will receive file over buffered transfer 
-			  // Client will play MP3 file once received 
-			  // Client will delete file once played 
 
     // Deallocate memory for the SSL data structures and close the socket
     SSL_free(ssl);
@@ -377,7 +368,10 @@ int validateUserLogin(SSL* ssl, char buffer[]) {
     } else if (strcmp(buffer, "2") == 0) {
 		printf("Client: Server Login Successful!\n");
 		return 2;
-	}
+	} else {
+        printf("Error with username or password.\n");
+        return 0;
+    }
     
 } // End of validateUserLogin
 
@@ -587,6 +581,12 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
             exit(EXIT_FAILURE);
         }
         
+        // Play the MP3 file
+        playMP3File(mp3_fd);
+        
+        // Delete the file
+        deleteMP3File();
+        
         close(mp3_fd);
             
         } else {
@@ -596,8 +596,67 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     
 } // End of selectSong
 
-// Play the MP3 file
-void playMP3File(SSL* ssl, char buffer[]) {
+// Plays an MP3 file using the file descriptor
+// Based on Dr. Hemmes playaudio.c file
+void playMP3File(int mp3_fd) {
+    
+    char song_buffer[128];             // Used to read the entire 128-byte ID3 tag
+    
+    // Get the metadata for the song
+    lseek(mp3_fd, -128L, SEEK_END);
+    
+    // Read the 128-byte ID3 tag from the end of the file
+    read(mp3_fd, song_buffer, 128);
+    
+    // Open the MP3 file. 44.1kHz represents the sample rate, 2 = stereo,
+    // and 1024 means the file will be processed in 1 KB chunks.
+    if (Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 1024) < 0) {
+        fprintf(stderr, "Error opening MP3 file to play: %s.\n", Mix_GetError());
+        exit(EXIT_FAILURE);
+    }
+    
+    // Loads the music file
+    Mix_Music *music = Mix_LoadMUS(SONG_FILE_LOC);
+    if(!music) {
+        fprintf(stderr, "Error loading the MP3 file to play: %s.\n", Mix_GetError());
+        exit(EXIT_FAILURE);
+    }
+    
+    // Play the music! The second parameter sets the number of times to play
+    // the song. A value of -1 is used for looping.
+    Mix_PlayMusic(music, 1);
+    
+    // This needs to be here otherwise the program terminates immediately.
+    // Delay value doesn't seem to matter much. Once the music stops playing,
+    // program exits the loop and terminates.
+    while (1) {
+        SDL_Delay(200);
+        if (Mix_PlayingMusic() == 0)
+            break;
+    }
+    
+    // Clean up dynamically allocated memory
+    Mix_FreeMusic(music);
+    Mix_CloseAudio();
+    Mix_Quit();
+    
+} // End of playMP3File method
+
+// Deletes a file from the local system
+void deleteMP3File() {
+    
+    int deleteFile = 0;
+    
+    deleteFile = remove(SONG_FILE_LOC);
+    
+    if (deleteFile == 0) {
+        if (DEBUG)
+            printf("File deleted succesfully.\n");
+    } else {
+        fprintf(stderr, "Error deleting file from user's system: %s.\n", strerror(errno));
+        fprintf(stdout, "Exiting program.\n");
+        exit(EXIT_FAILURE);
+    }
     
 }
 
