@@ -28,9 +28,10 @@ SYNOPSIS:  Server program
 #define MP3DIR				"/mp3"
 #define MP3LISTFILE		    "mp3_list.txt"
 #define ERRSTR_SIZE			4
+#define TEST_MP3_FILE		"./mp3/04 Koj nyob qhov twg.mp3"
 #define DEBUG				true
 
-int validateUserLogin(SSL* ssl, char buffer[], char client_addr[]);  // Read the user name from the client
+int validateUserLogin(SSL* ssl, char buffer[], char client_addr[], int validLogin);  // Read the user name from the client
 
 /******************************************************************************
 
@@ -212,6 +213,57 @@ int send_message(SSL* ssl, char* msg, int char_cnt) {
 	return errno;
 }
 
+// Function used for sending mp3 list and mp3 files
+int send_file(SSL* ssl, char file_path[], char client_addr[]) {
+	int		readfd, rcount, err_num;
+	char	file_buffer[BUFFER_SIZE];
+	char	err_str[ERRSTR_SIZE];		// char for error number with terminator
+	
+	readfd = open(file_path, O_RDONLY, 0);	// open input file stream
+			
+	if(readfd >= 0) {							// test input stream for file name
+		
+		do {									// loop through until end of file
+			bzero(file_buffer, BUFFER_SIZE);					// clear file_buffer
+			rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
+					
+			if (rcount <= 0) {									// test for read error
+				sprintf(err_str, "%d", errno);					// stringify error number
+				err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
+				printf("Server: Unable to read %s: %s\n", file_buffer, strerror(errno));
+				}
+			else {
+				file_buffer[rcount] = 0;	// terminates erroneous data at end of file_buffer...
+				err_num = send_message(ssl, file_buffer, rcount);	// send data to client
+				}
+		} while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full file_buffer
+				
+		close(readfd);		// close input stream
+			
+		// Commented out, error on Jeff's machine due to 4 extra bytes in the file_buffer
+		// send EOF to client
+		//sprintf(err_str, "%d", errno);						// stringify error number
+		//err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+				
+		if (err_num == 0)
+			fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+		else
+			fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
+			
+		// unable to read local file
+		} else {							// error opening file
+			// errno 2 - No such file or directory, or 13 - Permission denied
+			err_num = errno;				// copy number
+			fprintf(stderr, "Server: Unable to open %s: %s\n", file_buffer, strerror(err_num));
+				
+			// send error to client
+			sprintf(err_str, "%d", err_num);	// stringify error number
+			err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+			if (err_num != 0)
+				fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
+		}
+	return errno;
+}
 
 /******************************************************************************
 	Scans mp3 directory for number of files and longest file name.
@@ -349,9 +401,9 @@ int main(int argc, char **argv)
     unsigned int 	sockfd;
     unsigned int 	port;
     char			buffer[BUFFER_SIZE];
-	char			file_buffer[BUFFER_SIZE];
+	//char			file_buffer[BUFFER_SIZE];
 	int				mp3_count, max_length = 0;
-	int				readfd, rcount;
+	int				readfd;//, rcount;
 	char			err_str[ERRSTR_SIZE];		// char for error number with terminator
 	int				err_num;
 
@@ -376,11 +428,16 @@ int main(int argc, char **argv)
 	
 	// ************************************************************************
 	// SSL Block
-	// Initialize and create SSL data structures and algorithms
-    init_openssl();
+	// Create SSL method
+	init_openssl();
+	
+	// create new SSL connection state object
     ssl_ctx = create_new_context();
+	
+	// set certificates and keys
     configure_context(ssl_ctx);
-
+	
+	// TODO: Create failure transparency here using two static ports
     // Port can be specified on the command line. If it's not, use the default port
     switch(argc) {
 		case 1:
@@ -394,10 +451,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
     }
 
-    // This will create a network socket and return a socket descriptor, which is
-    // and works just like a file descriptor, but for network communcations. Note
-    // we have to specify which TCP/UDP port on which we are communicating as an
-    // argument to our user-defined create_socket() function.
+    // Create the underlying TCP socket connection to the remote host
     sockfd = create_socket(port);
 
     // Wait for incoming connections and handle them as the arrive
@@ -406,7 +460,7 @@ int main(int argc, char **argv)
         int                client;
         int                readfd;
         int                rcount;
-        int                validLogin 0;
+        int                validLogin = 0;
         struct             sockaddr_in addr;
         unsigned int       len = sizeof(addr);
         char               client_addr[INET_ADDRSTRLEN];
@@ -445,78 +499,16 @@ int main(int argc, char **argv)
 			// Don't transmit to client for transparency
         
         // Process username and login while the client username/password combo is incorrect
-        while (validLogin != 2) {
-                
-            // SSL_read call
-            int clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
-                      
-            //*** Enter client access
-            if (clientLoginMsg < 0) {    // Check the call for errors
-                int sslReadError = SSL_get_error(ssl, clientLoginMsg);
-                fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
-            }
-                
-            validLogin = validateUserLogin(ssl, buffer, client_addr);
-        }
-			
-        // ************************************************************************
-        // Client Logged In Block
-        if (validLogin == 2) {
-            // TODO: wait for message to send list or terminate
-            
-            // TODO: if send list
-            // Send mp3 list file to client
-            readfd = open(MP3LISTFILE, O_RDONLY, 0);	// open input file stream
-					
-            if(readfd >= 0) {							// test input stream for file name
-                
-                do {									// loop through until end of file
-                    bzero(file_buffer, BUFFER_SIZE);					// clear buffer
-                    rcount = read(readfd, file_buffer, BUFFER_SIZE);	// read and count chars
-							
-                    if (rcount <= 0) {									// test for read error
-                        sprintf(err_str, "%d", errno);					// stringify error number
-                        err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// send read error
-                        printf("Server: Unable to read %s: %s\n", buffer, strerror(errno));
-                        }
-                    else {
-                        file_buffer[rcount] = 0;	// terminates erroneous data at end of buffer...
-								
-                        if (DEBUG)
-                            printf("Server: Data read from file...: \"%s\"\n", file_buffer);
+		while (validLogin != 2)
+			validLogin = validateUserLogin(ssl, buffer, client_addr, validLogin);
 
-                        err_num = send_message(ssl, file_buffer, rcount);	// send data to client
-                        }
-                } while (rcount != 0 && rcount == BUFFER_SIZE);	// tests for no error and full buffer
-						
-                close(readfd);		// close input stream
-						
-                // Reached end of file, notify client
-                if (DEBUG)
-                    fprintf(stdout, "Server: Reached end of file...\n");
-						
-                // Commented out, error on Jeff's machine due to 4 extra bytes in the buffer
-                // send EOF to client
-                //sprintf(err_str, "%d", errno);						// stringify error number
-                //err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
-						
-                if (err_num == 0)
-                    fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
-                else
-                    fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
-					
-                // unable to read local file
-                } else {							// error opening file
-                    // errno 2 - No such file or directory, or 13 - Permission denied
-                    err_num = errno;				// copy number
-                    fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
-						
-                    // send error to client
-                    sprintf(err_str, "%d", err_num);	// stringify error number
-                    err_num = send_message(ssl, err_str, ERRSTR_SIZE);
-                    if (err_num != 0)
-                        fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
-                }
+        if (validLogin == 2) {
+			// Send list of available MP3's to client
+			send_file(ssl, MP3LISTFILE, client_addr);
+			
+			
+			
+			// send selected mp3 file
 					
                 // ************************************************************************
                 // Client Playing mp3 Block
@@ -540,7 +532,7 @@ int main(int argc, char **argv)
                 
                 // Use the song sent by the buffer to locate the song and open the file
                 // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
-                int mp3_fd = open("/Users/jck/Desktop/cs469project/mp3/04 Koj nyob qhov twg.mp3", O_RDONLY, 0);
+                int mp3_fd = open(TEST_MP3_FILE, O_RDONLY, 0);
                 
                 // File descriptor created successfully
                 if (mp3_fd >= 0) {
@@ -616,22 +608,30 @@ int main(int argc, char **argv)
 
 // Check that the operation reads a user name and matches a username in the database
 // TODO: integrate this with the client i.e. if return == 0 no user name exists, return == 1 username exists but password was wrong, return == 2 username password combo was correct
-int validateUserLogin(SSL* ssl, char buffer[], char client_addr[INET_ADDRSTRLEN]) {
-    
+int validateUserLogin(SSL* ssl, char buffer[], char client_addr[INET_ADDRSTRLEN], int validLogin) {
     int regCheck = 0;
     char username[BUFFER_SIZE];
     char password[BUFFER_SIZE];
 	int serverLoginMsg = 0;
+	int clientLoginMsg;
+	regex_t regex;					// Regex variable
 	
-    // Open the file
+	if (DEBUG)
+		printf("Server: Waiting for client to send authentication through SSL...\n");
+	
+	// SSL_read call
+	clientLoginMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
+	if (clientLoginMsg < 0) {    // Check the call for errors
+		int sslReadError = SSL_get_error(ssl, clientLoginMsg);
+		fprintf(stdout, "Error with SSL_read() call: %d.\n", sslReadError);
+	}
+	
+	// Open the file
 	FILE* fp = fopen(ACCOUNT_FILE, "r");
 	if (fp <= 0) {
 		fprintf(stderr, "Server: Error opening password file: %s\n", ACCOUNT_FILE);
 		exit(EXIT_FAILURE);
 	}
-
-	// Regex variable
-    regex_t regex;
 	
     // Regex pattern for: validate login(username, password);
     char *regexPattern = "^validate login[[:punct:]].*, .*[[:punct:]];$";
@@ -655,11 +655,12 @@ int validateUserLogin(SSL* ssl, char buffer[], char client_addr[INET_ADDRSTRLEN]
     
     // Regex compiling was successful
     } else {
+
         // Examine the string for a pattern match
         regCheck = regexec(&regex, buffer, (size_t) 0, NULL, 0);
         
 		if (DEBUG)
-			printf("\nServer received login: '%s'\nServer reading account file:\n", buffer);
+			printf("Server received login: '%s'\nServer reading account file:\n", buffer);
 		
         // The client sent a matching pattern
         if (regCheck == 0) {

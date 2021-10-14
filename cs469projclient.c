@@ -1,6 +1,6 @@
 /******************************************************************************
 
-PROGRAM:    cs469project.c
+PROGRAM:    cs469projclient.c
 AUTHOR:     Jeffrey Krauss, Dustin Segawa
 COURSE:     CS469 - Distributed Systems (Regis University)
 SYNOPSIS:   Description here.
@@ -37,9 +37,9 @@ SYNOPSIS:   Description here.
 
 #define DEFAULT_PORT        4433        // Primary port
 #define BACKUP_PORT         4435        // Backup port for fault tolerance
-#define D_HOST              98.43.2.117 // This host for production
+#define D_HOST              "98.43.2.117" // This host for production
 #define DEFAULT_HOST        "localhost" // This host for testing
-#define SONG_FILE_LOC       "/Users/jck/Desktop/cs469project/mp3/a.mp3"
+#define SONG_FILE_LOC       "./mp3/a.mp3"
 #define MAX_HOSTNAME_LENGTH 256
 #define BUFFER_SIZE         256
 #define USERNAME_LENGTH     32
@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     SSL*              ssl;
     
     // Set the hostname name so the client doesn't have to
-    strncpy(remote_host, D_HOST, MAX_HOSTNAME_LENGTH);
+    strncpy(remote_host, DEFAULT_HOST, MAX_HOSTNAME_LENGTH);
     
 	// REQ: Client should automatically acquire backup servers when primary servers not available
 	
@@ -124,11 +124,11 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     
-    // Display the login message to the client
-    login_message();
-    
     // TODO: loop that allows the user to exit or continue trying to log in
     do {
+		// Display the login message to the client
+		login_message();
+		
         // Produce a hash using the user's password + salt
         strcpy(u_login.password, get_login_info());
     
@@ -534,9 +534,13 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         if (DEBUG)
             printf("File size after long int conversion is: %ld.\n", fileSize);
         
-        // Create the file for read and write access
-        mp3_fd = open(SONG_FILE_LOC, O_RDWR | O_CREAT, 0);
         
+		if( access(SONG_FILE_LOC, F_OK ) == 0 )		// file exists
+			deleteMP3File();					// Delete the file
+		
+		// Create the file for read and write access	
+		mp3_fd = open(SONG_FILE_LOC, O_RDWR | O_CREAT, 0);
+		
         // File descriptor created successfully
         if (mp3_fd >= 0) {
             
