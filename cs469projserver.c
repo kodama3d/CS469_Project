@@ -31,7 +31,7 @@ SYNOPSIS:  Server program
 #define TEST_MP3_FILE		"./mp3/04 Koj nyob qhov twg.mp3"
 #define DEBUG				true
 
-int validateUserLogin(SSL* ssl, char buffer[], char client_addr[], int validLogin);  // Read the user name from the client
+int validateUserLogin(SSL* ssl, char client_addr[], int validLogin);  // Read the user name from the client
 
 /******************************************************************************
 
@@ -214,7 +214,7 @@ int send_message(SSL* ssl, char* msg, int char_cnt) {
 }
 
 // Function used for sending mp3 list and mp3 files
-int send_file(SSL* ssl, char file_path[], char client_addr[]) {
+int send_mp3_list(SSL* ssl, char file_path[], char client_addr[]) {
 	int		readfd, rcount, err_num;
 	char	file_buffer[BUFFER_SIZE];
 	char	err_str[ERRSTR_SIZE];		// char for error number with terminator
@@ -246,7 +246,7 @@ int send_file(SSL* ssl, char file_path[], char client_addr[]) {
 		//err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
 				
 		if (err_num == 0)
-			fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+			fprintf(stdout, "Server: Completed mp3 list transfer to client (%s)\n", client_addr);
 		else
 			fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
 			
@@ -376,6 +376,143 @@ int write_mp3_file(char mp3_list[][BUFFER_SIZE], int list_len) {
 	close(writefd);		// closes new file
 }
 
+// This will return a song number i.e. 1, 2, 10, etc.
+int get_song_number(SSL* ssl) {
+    char	buffer[BUFFER_SIZE];
+	char	*ptr;
+	long	long_number;
+	int		song_number;
+	
+	SSL_read(ssl, buffer, BUFFER_SIZE);		// client's number as string
+	long_number = strtol(buffer, &ptr, 10);	// convert to number
+	song_number = (int) long_number;		// convert to int
+	song_number--;							// decrement for array selection
+	
+	return song_number;
+}
+
+
+
+int send_mp3(SSL* ssl, char filename[], char client_addr[]) {
+    char	path_fn[BUFFER_SIZE];
+	int		byte_count = 0;			// For debugging
+	int		wcount = 0;				// Amount written by SSL_write
+	int		fileSize = 0;			// Used with stat to get file size
+	char	mp3Buffer[BUFFER_SIZE];	// Buffer to send mp3 file bytes
+	struct	stat st;				// Used to get file size
+	int		err_num;
+	int		rcount = 0;				// Erase previous rcount assignment
+	char	err_str[ERRSTR_SIZE];	// char for error number with terminator
+	char	buffer[BUFFER_SIZE];
+	
+	// Create the target path and filename
+	strcpy(path_fn, ".");
+	strcat(path_fn, MP3DIR);
+	strcat(path_fn, "/");
+	strcat(path_fn, filename);
+	
+	if (DEBUG)
+		printf("Server: Target filename: '%s'\n   Target path: '%s'\n", filename, path_fn);
+
+	// Use the song sent by the buffer to locate the song and open the file
+	int mp3_fd = open(path_fn, O_RDONLY, 0);
+	
+	// File descriptor created successfully
+	if (mp3_fd >= 0) {
+		
+		// Get the file size and send it to the client
+		fstat(mp3_fd, &st);
+		fileSize = st.st_size;
+		
+		if (DEBUG) {
+			printf("   MP3 file opened and fd created.\n");
+			printf("   MP3 file size is: %d.\n", fileSize);
+		}
+		
+		// Send the size of the file to the client
+		bzero(buffer, BUFFER_SIZE);
+		sprintf(buffer, "%d", fileSize);
+		send_message(ssl, buffer, BUFFER_SIZE);
+		
+		// Read bytes from the file and send them to client using SSL_write()
+		do {
+			bzero(mp3Buffer, BUFFER_SIZE);
+			rcount = read(mp3_fd, mp3Buffer, BUFFER_SIZE);
+			
+			// Identify errors with read syscall
+			if (rcount <= 0) {
+				sprintf(err_str, "%d", errno);                    // stringify error number
+				err_num = send_message(ssl, err_str, ERRSTR_SIZE);    // send read error
+				printf("Server: Unable to read %d: %s\n", mp3_fd, strerror(errno));
+			
+			// Read syscall successfull
+			} else {
+				mp3Buffer[rcount] = '\0';                   // Null terminate
+				wcount = SSL_write(ssl, mp3Buffer, rcount); // Send mp3 bytes to client
+				byte_count += rcount;                            // Sum the bytes written
+			}
+		} while(rcount != 0 && rcount == BUFFER_SIZE);
+		
+		if (DEBUG)
+			fprintf(stdout, "Server: Reached end of file...\n");
+		
+		// send EOF to client
+		sprintf(err_str, "%d", errno);						// stringify error number
+		err_num = send_message(ssl, err_str, ERRSTR_SIZE);	// errno should be 0 - "Success"
+		
+		if (err_num == 0)
+			fprintf(stdout, "Server: Completed file transfer to client (%s)\n", client_addr);
+		else
+			fprintf(stderr, "Server: Error sending EOF to client (%s)\n", client_addr);
+	
+		if (DEBUG)
+			printf("Total bytes written to buffer was: %d\n", byte_count);
+		
+	} else {
+		// errno 2 - No such file or directory, or 13 - Permission denied
+		err_num = errno;
+		fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
+		
+		// send error to client
+		sprintf(err_str, "%d", err_num);    // stringify error number
+		err_num = send_message(ssl, err_str, ERRSTR_SIZE);
+		if (err_num != 0)
+			fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
+	}
+	close(mp3_fd);
+}
+
+void run_SongSlinger(SSL* ssl, char mp3_list[][BUFFER_SIZE], char client_addr[]) {
+	char	mp3_filename[BUFFER_SIZE];
+	bool	playing = true;
+	
+	send_mp3_list(ssl, MP3LISTFILE, client_addr);	// Send list of available MP3's to client
+
+	// Playing songs loop
+	do {
+		if (DEBUG)
+			printf("Waiting for client: Select Song?...\n");
+		
+		int song_num = get_song_number(ssl);		// Get the song number selected by user
+		strcpy(mp3_filename, mp3_list[song_num]);	// Convert to the song filename
+		send_mp3(ssl, mp3_filename, client_addr);	// Send mp3 to client
+		
+		if (DEBUG)
+			printf("Waiting for client: Continue?...\n");
+		
+		SSL_read(ssl, mp3_filename, BUFFER_SIZE);
+		
+		if (DEBUG)
+			printf("Received: %s\n", mp3_filename);
+		
+		if (strcmp(mp3_filename, "N") == 0)
+			playing = false;
+		
+	} while (playing);
+}
+			
+
+
 /******************************************************************************
 
 The sequence of steps required to establish a secure SSL/TLS connection is:
@@ -400,15 +537,9 @@ int main(int argc, char **argv)
     SSL_CTX*		ssl_ctx;
     unsigned int 	sockfd;
     unsigned int 	port;
-    char			buffer[BUFFER_SIZE];
-	//char			file_buffer[BUFFER_SIZE];
+    //char			buffer[BUFFER_SIZE];
 	int				mp3_count, max_length = 0;
-	int				readfd;//, rcount;
-	char			err_str[ERRSTR_SIZE];		// char for error number with terminator
-	int				err_num;
 
-	// ************************************************************************
-	// MP3 List Block
     // Get mp3 file count and file name size
 	mp3_count = define_mp3_list(& max_length);
 	if (mp3_count <= 0)
@@ -416,18 +547,16 @@ int main(int argc, char **argv)
 				
 	// Initialize mp3 list
 	char mp3_list[mp3_count][BUFFER_SIZE];
-	memset(mp3_list, 0, mp3_count * BUFFER_SIZE * sizeof(char));	// Runs without it
+	memset(mp3_list, 0, mp3_count * BUFFER_SIZE * sizeof(char));	// Runs without it?
 	
 	// Read directory into list and write list to file
 	get_mp3_list(mp3_list);
 	write_mp3_file(mp3_list, mp3_count);
 	
-	if (DEBUG)
+	if (DEBUG)		// Shows that file list is in main
 		for (int i = 0; i < sizeof(mp3_list)/sizeof(mp3_list[0]); i++)
 			printf("   String Array #%i: '%s'\n", i, mp3_list[i]);
 	
-	// ************************************************************************
-	// SSL Block
 	// Create SSL method
 	init_openssl();
 	
@@ -456,14 +585,12 @@ int main(int argc, char **argv)
 
     // Wait for incoming connections and handle them as the arrive
     while(true) {
-        SSL*               ssl;
-        int                client;
-        int                readfd;
-        int                rcount;
-        int                validLogin = 0;
-        struct             sockaddr_in addr;
-        unsigned int       len = sizeof(addr);
-        char               client_addr[INET_ADDRSTRLEN];
+        SSL*            ssl;
+        int             client;
+        int             validLogin = 0;
+        struct          sockaddr_in addr;
+        unsigned int    len = sizeof(addr);
+        char            client_addr[INET_ADDRSTRLEN];
         
         // Once an incoming connection arrives, accept it.  If this is successful, we
         // now have a connection between client and server and can communicate using
@@ -500,104 +627,17 @@ int main(int argc, char **argv)
         
         // Process username and login while the client username/password combo is incorrect
 		while (validLogin != 2)
-			validLogin = validateUserLogin(ssl, buffer, client_addr, validLogin);
+			validLogin = validateUserLogin(ssl, client_addr, validLogin);
 
         if (validLogin == 2) {
-			// Send list of available MP3's to client
-			send_file(ssl, MP3LISTFILE, client_addr);
-			
-			
-			
-			// send selected mp3 file
-					
-                // ************************************************************************
-                // Client Playing mp3 Block
-                // TODO: LOOP
-                    // TODO: wait for file number message or terminate
-                    
-                    // TODO: if send file
-                        // TODO: send file
-                
-                // This will return a song number i.e. 1, 2, 10, etc.
-                // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
-                int songSelection = SSL_read(ssl, buffer, BUFFER_SIZE);
-                
-                int count = 0;                  // For debugging
-                int wcount = 0;                 // Amount written by SSL_write
-                int fileSize = 0;               // Used with stat to get file size
-                char mp3Buffer[BUFFER_SIZE];    // Buffer to send mp3 file bytes
-                struct stat st;                 // Used to get file size
-                
-                rcount = 0;                     // Erase previous rcount assignment
-                
-                // Use the song sent by the buffer to locate the song and open the file
-                // TODO: hardcoded now, needs logic to find and open the file on Dustin's machine
-                int mp3_fd = open(TEST_MP3_FILE, O_RDONLY, 0);
-                
-                // File descriptor created successfully
-                if (mp3_fd >= 0) {
-                    
-                    // Get the file size and send it to the client
-                    fstat(mp3_fd, &st);
-                    fileSize = st.st_size;
-                    
-                    if (DEBUG)
-                        printf("MP3 file opened and fd created.\n");
-                        printf("MP3 file size is: %d.\n", fileSize);
-                    
-                    // Send the size of the file to the client
-                    bzero(buffer, BUFFER_SIZE);
-                    sprintf(buffer, "%d", fileSize);
-                    send_message(ssl, buffer, BUFFER_SIZE);
-                    
-                    // Read bytes from the file and send them to client using SSL_write()
-                    do {
-                        bzero(mp3Buffer, BUFFER_SIZE);
-                        rcount = read(mp3_fd, mp3Buffer, BUFFER_SIZE);
-                        
-                        // Identify errors with read syscall
-                        if (rcount <= 0) {
-                            sprintf(err_str, "%d", errno);                    // stringify error number
-                            err_num = send_message(ssl, err_str, ERRSTR_SIZE);    // send read error
-                            printf("Server: Unable to read %d: %s\n", mp3_fd, strerror(errno));
-                        
-                        // Read syscall successfull
-                        } else {
-                            mp3Buffer[rcount] = '\0';                   // Null terminate
-                            wcount = SSL_write(ssl, mp3Buffer, rcount); // Send mp3 bytes to client
-                            count += rcount;                            // Sum the bytes written
-                        }
-                    } while(rcount != 0 && rcount == BUFFER_SIZE);
-                
-                    if (DEBUG)
-                        printf("Total bytes written to buffer was: %d\n", count);
-                    
-                } else {
-                    err_num = errno;
-                    fprintf(stderr, "Server: Unable to open %s: %s\n", buffer, strerror(err_num));
-                    
-                    // send error to client
-                    sprintf(err_str, "%d", err_num);    // stringify error number
-                    err_num = send_message(ssl, err_str, ERRSTR_SIZE);
-                    if (err_num != 0)
-                        fprintf(stderr, "Server: Error sending error to client (%s)\n", client_addr);
-                }
-                close(mp3_fd);
-                
-						// TODO: else
-							// terminate
+			run_SongSlinger(ssl, mp3_list, client_addr);
 
-				// TODO: else
-					// terminate
-				
-			} 
-        
+		}
         // Terminate the SSL session, close the TCP connection, and clean up
         fprintf(stdout, "Server: Terminating SSL session and TCP connection with client (%s)\n", client_addr);
         SSL_free(ssl);
         close(client);
     }
-
     // Tear down and clean up server data structures before terminating
     SSL_CTX_free(ssl_ctx);
     cleanup_openssl();
@@ -608,10 +648,11 @@ int main(int argc, char **argv)
 
 // Check that the operation reads a user name and matches a username in the database
 // TODO: integrate this with the client i.e. if return == 0 no user name exists, return == 1 username exists but password was wrong, return == 2 username password combo was correct
-int validateUserLogin(SSL* ssl, char buffer[], char client_addr[INET_ADDRSTRLEN], int validLogin) {
+int validateUserLogin(SSL* ssl, char client_addr[INET_ADDRSTRLEN], int validLogin) {
     int regCheck = 0;
     char username[BUFFER_SIZE];
     char password[BUFFER_SIZE];
+	char buffer[BUFFER_SIZE];
 	int serverLoginMsg = 0;
 	int clientLoginMsg;
 	regex_t regex;					// Regex variable

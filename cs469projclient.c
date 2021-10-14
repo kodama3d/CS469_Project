@@ -42,6 +42,7 @@ SYNOPSIS:   Description here.
 #define SONG_FILE_LOC       "./mp3/a.mp3"
 #define MAX_HOSTNAME_LENGTH 256
 #define BUFFER_SIZE         256
+#define ERRSTR_SIZE			4
 #define USERNAME_LENGTH     32
 #define PASSWORD_LENGTH     32
 #define HASH_LENGTH         256         // J: hash length shouldn't be over 256
@@ -124,7 +125,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     
-    // TODO: loop that allows the user to exit or continue trying to log in
+	// Loops until logged in TODO: find an escape without crashing server
     do {
 		// Display the login message to the client
 		login_message();
@@ -382,6 +383,7 @@ void displayMenu(SSL* ssl, char buffer[]) {
     int     exitFlag = 0;           // Exit while loops without return per Regis standards
     char    selectAgain;            // Char variable to select another song or not
     char    songMenu[BUFFER_SIZE];  // Song menu for the client to view
+	int		songCounter = 1;
     
     // Get the mp3 file message from the buffer
     int mp3FileMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
@@ -403,10 +405,14 @@ void displayMenu(SSL* ssl, char buffer[]) {
         switch(userInput) {
             // Loop through the song menu and display the string names
             case 1:
-                printf("Song Menu:\n");
+                printf("Song Menu:\n1 - ");
                 while (songMenu[i] != '\0') {
                     if (songMenu[i] == ';') {
-                        printf("\n");
+                        songCounter++;
+						if(songMenu[i+1] == '\0')
+							printf("\n");
+						else
+							printf("\n%i - ", songCounter);
                         i++;
                     }
                     if (songMenu[i] != '\0') {
@@ -426,7 +432,7 @@ void displayMenu(SSL* ssl, char buffer[]) {
                     printf("\nEnter Y to select another song or N to exit the program:\n");
                     scanf(" %c", &selectAgain);
                     fflush(stdin);
-                    
+					
                     size_t j = 0;  // Iteration variable
                     
                     printf("\n");  // Clean up the output
@@ -434,16 +440,22 @@ void displayMenu(SSL* ssl, char buffer[]) {
                     switch(selectAgain) {
                         // Yes, show the menu and allow another selection
                         case 'Y':
-                            printf("Song Menu:\n");
+							send_message(ssl, "Y", BUFFER_SIZE);
+							songCounter = 1;
+                            printf("Song Menu:\n1 - ");
                             while (songMenu[j] != '\0') {
                                 if (songMenu[j] == ';') {
-                                    printf("\n");
-                                    j++;
-                                }
-                                if (songMenu[j] != '\0') {
-                                    printf("%c", songMenu[j]);
-                                    j++;
-                                }
+									songCounter++;
+									if(songMenu[j+1] == '\0')
+										printf("\n");
+									else
+										printf("\n%i - ", songCounter);
+									j++;
+								}
+								if (songMenu[j] != '\0') {
+									printf("%c", songMenu[j]);
+									j++;
+								}
                             }
                             printf("\n");
                             selectSong(ssl, buffer, songMenu);
@@ -451,6 +463,7 @@ void displayMenu(SSL* ssl, char buffer[]) {
                         
                         // They don't want to select another song, exit program
                         case 'N':
+							send_message(ssl, "N", BUFFER_SIZE);
                             printf("Exiting program.\n");
                             printf("Thank you for using Song Slinger!.\n");
                             exitFlag = 1;
@@ -490,6 +503,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
     long fileSize = 0;      // File size after conversion from str to long int
     char *endptr;           // Pointer for string to long int conversion
     char song[BUFFER_SIZE]; // The song selection that the user types
+	bool reading_state = true;
     
     // Ask the user for a song selection
     printf("Please type the song you want to play\n");
@@ -546,30 +560,56 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
             
             if (DEBUG)
                 printf("MP3 file created on client.\n");
-    
+			
+			int i = 0;
+
             // SSL_read and write to the mp3 file while bytes remain
             do {
-                
-                // SSL_read call
-                rcount = SSL_read(ssl, buffer, BUFFER_SIZE);
+				// SSL_read call
+                bzero(buffer, BUFFER_SIZE);
+				rcount = SSL_read(ssl, buffer, BUFFER_SIZE);
+				buffer[rcount] = '\0';                      		// Null terminate
                 
                 // Identify any errors with SSL_read()
                 if (rcount <= 0) {
+					reading_state = false;							// flags exit loop
                     if (DEBUG) {
                         int sslReadError = SSL_get_error(ssl, rcount);
                         idSSLReadError(sslReadError);
                     }
-                    
-                // SSL_read() is successful
+					
+				//***** Added this block to handle terminal codes
+                } else if (rcount == ERRSTR_SIZE) {					// check based on data size
+					// 0 is end of file
+					if (strcmp(buffer, "0") == 0) {
+						fprintf(stdout, "Client: Successfully received mp3 file...\n");
+						reading_state = false;						// flags exit loop
+					
+					// all other terminal errors
+					} else if (0 < atoi(buffer) && atoi(buffer) <= 13) {
+						fprintf(stderr, "Client: Could not retrieve file: %s\n",
+														strerror(atoi(buffer)));
+						reading_state = false;						// flags exit loop
+					
+					/* NOTE: numbers 0-13 transferred as data would be less
+					than 4 bytes unless surrounded by white space */
+					
+					} else {
+					// not a terminal error message, write to copy
+						wcount = write(mp3_fd, buffer, rcount);     // Write the bytes to the MP3 fd
+						count += wcount;                            // Sum the bytes written
+						bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
+					}
+				// SSL_read() is successful
                 } else {
-                    buffer[rcount] = '\0';                      // Null terminate
+                    //buffer[rcount] = '\0';                 	// Null terminate
                     wcount = write(mp3_fd, buffer, rcount);     // Write the bytes to the MP3 fd
-                    count += wcount;                            // Sum the bytes written
+					count += wcount;                            // Sum the bytes written
                     bzero(buffer, BUFFER_SIZE);                 // Erase the buffer
                 }
                 
             // Continue while data is being sent by the server
-            } while (rcount > 0);
+            } while (reading_state);
             
             if (DEBUG)
                 printf("\nTotal amount written to MP3 file is: %d\n", count);
@@ -586,7 +626,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         }
         
         // Play the MP3 file
-        playMP3File(mp3_fd);
+        // playMP3File(mp3_fd);	// disabled for Dustin's broken client...
         
         // Delete the file
         deleteMP3File();
