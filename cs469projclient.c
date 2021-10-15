@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
     SSL*              ssl;
     
     // Set the hostname name so the client doesn't have to
-    strncpy(remote_host, DEFAULT_HOST, MAX_HOSTNAME_LENGTH);
+    strncpy(remote_host, D_HOST, MAX_HOSTNAME_LENGTH);
     
 	// REQ: Client should automatically acquire backup servers when primary servers not available
 	
@@ -613,8 +613,15 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
             
             if (DEBUG)
                 printf("\nTotal amount written to MP3 file is: %d\n", count);
-            
-        // Error creating the file descriptor
+        
+			//*******************************************************
+			// Added this to deal with permission error with new file
+			char cmd[32];
+			sprintf(cmd, "chmod 666 %s", SONG_FILE_LOC);
+			system(cmd);
+			//*******************************************************
+		
+		// Error creating the file descriptor
         } else {
             errorCreatingFD(mp3_fd);
         }
@@ -626,7 +633,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
         }
         
         // Play the MP3 file
-        // playMP3File(mp3_fd);	// disabled for Dustin's broken client...
+        playMP3File(mp3_fd);
         
         // Delete the file
         deleteMP3File();
