@@ -22,6 +22,7 @@ SYNOPSIS:  Server program
 
 #define BUFFER_SIZE			256
 #define DEFAULT_PORT		4433
+#define MAX_PORT			4435
 #define CERTIFICATE_FILE	"cert.pem"
 #define KEY_FILE			"key.pem"
 #define ACCOUNT_FILE		"./user_database.txt"
@@ -42,8 +43,9 @@ machine to that socket, then listens on the socket for incoming TCP connections.
 *******************************************************************************/
 int create_socket(unsigned int port) {
     
-    int    s;
-    struct sockaddr_in addr;
+    int 	s;
+    struct	sockaddr_in addr;
+	bool	forwarded = false;
 
     // First we set up a network socket. An IP socket address is a combination
     // of an IP interface address plus a 16-bit port number. The struct field
@@ -54,48 +56,58 @@ int create_socket(unsigned int port) {
     // any available network interface on the machine, so clients can connect
     // through any, e.g., external network interface, localhost, etc.
 
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (port > MAX_PORT) {
+		fprintf(stderr, "Server: Unable to bind to sockets, all ports in use\n\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+	printf("Trying port: %i\n", port);
 
-    // Create a socket (endpoint) for network communication.  The socket()
-    // call returns a socket descriptor, which works exactly like a file
-    // descriptor for file system operations we worked with in CS431
-    //
-    // Sockets are by default blocking, so the server will block while reading
-    // from or writing to a socket. For most applications this is acceptable.
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) {
-        fprintf(stderr, "Server: Unable to create socket: %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
+	// Create a socket (endpoint) for network communication.  The socket()
+	// call returns a socket descriptor, which works exactly like a file
+	// descriptor for file system operations we worked with in CS431
+	//
+	// Sockets are by default blocking, so the server will block while reading
+	// from or writing to a socket. For most applications this is acceptable.
+	s = socket(AF_INET, SOCK_STREAM, 0);
+	if (s < 0) {
+		fprintf(stderr, "Server: Unable to create socket: %s", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 
-    // When you create a socket, it exists within a namespace, but does not have
-    // a network address associated with it.  The bind system call creates the
-    // association between the socket and the network interface.
-    //
-    // An error could result from an invalid socket descriptor, an address already
-    // in use, or an invalid network address
-    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        fprintf(stderr, "Server: Unable to bind to socket: %s\n", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
+	// When you create a socket, it exists within a namespace, but does not have
+	// a network address associated with it.  The bind system call creates the
+	// association between the socket and the network interface.
+	//
+	// An error could result from an invalid socket descriptor, an address already
+	// in use, or an invalid network address
+	if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		fprintf(stderr, "Server: Unable to bind to socket: %s\n", strerror(errno));
+		//exit(EXIT_FAILURE);
+		forwarded = true;
+		s = create_socket(port + 1);	// calls itself incrementing the port
+	}
 
-    // Listen for incoming TCP connections using the newly created and configured
-    // socket. The second argument (1) indicates the number of pending connections
-    // allowed, which in this case is one.  That means if the server is connected
-    // to one client, a second client attempting to connect may receive an error,
-    // e.g., connection refused.
-    //
-    // Failure could result from an invalid socket descriptor or from using a socket
-    // descriptor that is already in use.
-    if (listen(s, 1) < 0) {
-        fprintf(stderr, "Server: Unable to listen: %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    fprintf(stdout, "Server: Listening on TCP port %u\n", port);
-
+	// Listen for incoming TCP connections using the newly created and configured
+	// socket. The second argument (1) indicates the number of pending connections
+	// allowed, which in this case is one.  That means if the server is connected
+	// to one client, a second client attempting to connect may receive an error,
+	// e.g., connection refused.
+	//
+	// Failure could result from an invalid socket descriptor or from using a socket
+	// descriptor that is already in use.
+	if (listen(s, 1) < 0) {
+		fprintf(stderr, "Server: Unable to listen: %s", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	
+	if (!forwarded)
+		fprintf(stdout, "Server: Listening on TCP port %u\n", port);
+	
     return s;
 }
 

@@ -36,7 +36,7 @@ SYNOPSIS:   Description here.
 #include <openssl/x509_vfy.h>
 
 #define DEFAULT_PORT        4433        // Primary port
-#define BACKUP_PORT         4435        // Backup port for fault tolerance
+#define BACKUP_PORT         4434        // Backup port for fault tolerance
 #define D_HOST              "98.43.2.117" // This host for production
 #define DEFAULT_HOST        "localhost" // This host for testing
 #define SONG_FILE_LOC       "./mp3/a.mp3"
