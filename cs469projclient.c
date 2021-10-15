@@ -99,6 +99,8 @@ int main(int argc, char** argv) {
     
     // Set the hostname name so the client doesn't have to
     strncpy(remote_host, D_HOST, MAX_HOSTNAME_LENGTH);
+    
+	// REQ: Client should automatically acquire backup servers when primary servers not available
 	
     // Initialize Open_SSL
     open_SSL();
@@ -186,7 +188,7 @@ SSL_CTX* initSSL(void) {
     
     return ssl_ctx;
 
-} // End of initSSL method
+}
 
 // Establish a secure TCP connection to the server specified by 'hostname'
 int create_socket(char* hostname, unsigned int port) {
@@ -204,7 +206,6 @@ int create_socket(char* hostname, unsigned int port) {
   
     // Create a socket (endpoint) for network communication.
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    
     if (sockfd < 0) {
         fprintf(stderr, "Server: Unable to create socket: %s", strerror(errno));
         exit(EXIT_FAILURE);
@@ -235,7 +236,7 @@ int create_socket(char* hostname, unsigned int port) {
 // Output login message to the client
 void login_message() {
     fprintf(stdout, "\nWelcome to Song Slinger!\n\nEnter your username and password.\n\n");
-} // End of login_message method
+}
 
 // Get the user's login information: username and password
 char* get_login_info() {
@@ -272,8 +273,7 @@ char* get_login_info() {
     bzero(u_login.password, PASSWORD_LENGTH);
     
     return hash;
-
-} // End of get_login_info method
+}
 
 // This function reads in a character string that represents a password,
 // but does so while not echoing the characters typed to the console.
@@ -327,7 +327,7 @@ int send_message(SSL* ssl, char* msg, int char_cnt) {
 			printf("Server: Message transmitted to client: \"%s\"\n", msg);
 
 	return errno;
-} // End of send_message
+}	// End of send_message
 
 // Validates the username and password (hash) with the server
 int validateUserLogin(SSL* ssl, char buffer[]) {
@@ -383,7 +383,7 @@ void displayMenu(SSL* ssl, char buffer[]) {
     int     exitFlag = 0;           // Exit while loops without return per Regis standards
     char    selectAgain;            // Char variable to select another song or not
     char    songMenu[BUFFER_SIZE];  // Song menu for the client to view
-	int		songCounter = 1;        //
+	int		songCounter = 1;
     
     // Get the mp3 file message from the buffer
     int mp3FileMsg = SSL_read(ssl, buffer, BUFFER_SIZE);
@@ -409,7 +409,7 @@ void displayMenu(SSL* ssl, char buffer[]) {
                 while (songMenu[i] != '\0') {
                     if (songMenu[i] == ';') {
                         songCounter++;
-						if (songMenu[i+1] == '\0')
+						if(songMenu[i+1] == '\0')
 							printf("\n");
 						else
 							printf("\n%i - ", songCounter);
@@ -549,7 +549,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
             printf("File size after long int conversion is: %ld.\n", fileSize);
         
         
-		if (access(SONG_FILE_LOC, F_OK ) == 0)	// File exists
+		if( access(SONG_FILE_LOC, F_OK ) == 0 )		// file exists
 			deleteMP3File();					// Delete the file
 		
 		// Create the file for read and write access	
@@ -572,7 +572,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
                 
                 // Identify any errors with SSL_read()
                 if (rcount <= 0) {
-					reading_state = false;							// Flags exit loop
+					reading_state = false;							// flags exit loop
                     if (DEBUG) {
                         int sslReadError = SSL_get_error(ssl, rcount);
                         idSSLReadError(sslReadError);
@@ -644,6 +644,7 @@ void selectSong(SSL* ssl, char buffer[], char songMenu[]) {
             printf("Song not found on the song menu. Please check your spelling.\n");
         }
 
+    
 } // End of selectSong
 
 // Plays an MP3 file using the file descriptor
