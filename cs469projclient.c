@@ -153,7 +153,8 @@ int main(int argc, char** argv) {
         // Increment login attempts
         loginAttempts++;
         
-        if (loginAttempts == 3) {
+        // Exit program because the client tried to login 3 times unsuccessfully
+        if (validLogin != 2 && loginAttempts == 3) {
             printf("Max Login Attempts Reached: %d.\n", loginAttempts);
             printf("Contact the Help Desk for Assistance.\n");
             printf("Exiting program.\n");
