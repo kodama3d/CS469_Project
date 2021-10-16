@@ -92,15 +92,13 @@ int main(int argc, char** argv) {
     int               writefd;
     int               rcount;
     int               wcount;
-    int               total = 0;
+    int               loginAttempts = 0;
     int               validLogin = 0;
     SSL_CTX*          ssl_ctx;
     SSL*              ssl;
     
     // Set the hostname name so the client doesn't have to
     strncpy(remote_host, D_HOST, MAX_HOSTNAME_LENGTH);
-    
-	// REQ: Client should automatically acquire backup servers when primary servers not available
 	
     // Initialize Open_SSL
     open_SSL();
@@ -111,9 +109,26 @@ int main(int argc, char** argv) {
     // Create a new SSL connection state object
     ssl = SSL_new(ssl_ctx);
     
-    // Create the underlying TCP socket connection to the remote host
+    // Create the underlying TCP socket connection to the remote host on default port
     sockfd = create_socket(remote_host, port);
-
+    if (sockfd != 0) {
+        if (DEBUG)
+            printf("Client: connected to host on port: %d\n", port);
+    
+    // It didn't work, try the backup port
+    } else {
+        port = BACKUP_PORT;
+        sockfd = create_socket(remote_host, port);
+        if (sockfd != 0) {
+            if (DEBUG)
+                printf("Client: connected to host on port: %d\n", port);
+            else {
+                printf("Client: no connections made on either port.\nExiting program.\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+    
     // Bind the SSL object to the network socket descriptor
     SSL_set_fd(ssl, sockfd);
 
@@ -125,16 +140,25 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
     
-	// Loops until logged in TODO: find an escape without crashing server
+    // Loops until logged in or 3 login attempts
     do {
-		// Display the login message to the client
-		login_message();
-		
+        login_message();
+        
         // Produce a hash using the user's password + salt
         strcpy(u_login.password, get_login_info());
     
         // Send the client's login info to the server for validation
         validLogin = validateUserLogin(ssl, buffer);
+        
+        // Increment login attempts
+        loginAttempts++;
+        
+        if (loginAttempts == 3) {
+            printf("Max Login Attempts Reached: %d.\n", loginAttempts);
+            printf("Contact the Help Desk for Assistance.\n");
+            printf("Exiting program.\n");
+            exit(EXIT_FAILURE);
+        }
         
     } while (validLogin != 2);
     
@@ -188,7 +212,7 @@ SSL_CTX* initSSL(void) {
     
     return ssl_ctx;
 
-}
+} // End of initSSL method
 
 // Establish a secure TCP connection to the server specified by 'hostname'
 int create_socket(char* hostname, unsigned int port) {
@@ -206,26 +230,24 @@ int create_socket(char* hostname, unsigned int port) {
   
     // Create a socket (endpoint) for network communication.
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    
     if (sockfd < 0) {
         fprintf(stderr, "Server: Unable to create socket: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
   
-    dest_addr.sin_family=AF_INET;       // Setup a network socket
-    dest_addr.sin_port=htons(port);     // Convert TCP port to network byte order using htons()
+    dest_addr.sin_family=AF_INET;                        // Setup a network socket
+    dest_addr.sin_port=htons(port);                      // Convert TCP port to network byte order using htons()
     dest_addr.sin_addr.s_addr = *(long*)(host->h_addr);  // Netork address of remote host
   
     // Connect to the remote host
     if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) < 0) {
         
-        // Can't connect to remote host, try backup port
-        dest_addr.sin_port=htons(BACKUP_PORT);
-        
-        // It doesn't work with the backup, exit
+        // It didn't connect to the remote host
         if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) < 0) {
-            fprintf(stderr, "Client: Cannot connect to host %s [%s] on port %d: %s\n",
+            fprintf(stderr, "Client: Cannot connect to host %s [%s] on  port %d: %s\n",
                 hostname, inet_ntoa(dest_addr.sin_addr), port, strerror(errno));
-            exit(EXIT_FAILURE);
+            return 0;
         }
     }
     
