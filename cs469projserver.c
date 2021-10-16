@@ -407,7 +407,7 @@ void run_SongSlinger(SSL* ssl, char mp3_list[][BUFFER_SIZE], char client_addr[])
 		int song_num = get_song_number(ssl);		// Get the song number selected by user
 		
 		if (DEBUG)
-			printf("Server: Received song number: %i\n", song_num);
+			printf("Server: Received song number: %i\n", song_num + 1);
 		
 		strcpy(mp3_filename, mp3_list[song_num]);	// Convert to the song filename
 		send_mp3(ssl, mp3_filename, client_addr);	// Send mp3 to client
