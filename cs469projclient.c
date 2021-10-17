@@ -130,17 +130,18 @@ int main(int argc, char** argv) {
     } else {
         if (DEBUG)
             printf("Client: no connection made with port: %d\n", port);
+        
         port = BACKUP_PORT;
         sockfd = create_socket(remote_host, port);
+            
         if (sockfd != 0) {
             if (DEBUG)
                 printf("Client: connected to host on port: %d\n", port);
-            else {
-                if (DEBUG)
-                    printf("Client: no connection made with port: %d\n", port);
-                printf("No connection made with server on either port, please contact the help desk for assistance.\nExiting program.\n");
-                exit(EXIT_FAILURE);
-            }
+        } else {
+            if (DEBUG)
+                printf("Client: no connection made with port: %d\n", port);
+            printf("No connection made with server on either port, please contact the help desk for assistance.\nExiting program.\n");
+            exit(EXIT_FAILURE);
         }
     }
 
