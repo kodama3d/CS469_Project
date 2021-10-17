@@ -274,8 +274,8 @@ int create_socket(char* hostname, unsigned int port) {
         
         // It doesn't work with the default port
         if (connect(sockfd, (struct sockaddr *) &dest_addr, sizeof(struct sockaddr)) < 0) {
-            fprintf(stderr, "Error: Cannot connect to host %s [%s] on  port %d, please contact the help desk for assistance.\n: %s\n",
-                hostname, inet_ntoa(dest_addr.sin_addr), port, strerror(errno));
+            if (DEBUG)
+                fprintf(stderr, "Error: Cannot connect to host %s [%s] on port %d.\n: %s\n", hostname, inet_ntoa(dest_addr.sin_addr), port, strerror(errno));
             return 0;
         }
     }
